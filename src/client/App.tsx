@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { ChatMessage } from './components/ChatMessage'
 import { SettingsModal } from './components/SettingsModal'
 
@@ -28,6 +28,13 @@ export function App() {
     model: '',
     provider: ''
   })
+  const inputRef = useRef<HTMLInputElement>(null)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
 
   // Initialize session ID and settings
   useEffect(() => {
@@ -85,7 +92,19 @@ export function App() {
 
         data.messages.forEach((msg: any) => {
           if (msg.role === 'user' && msg.content) {
-            historyMessages.push({ role: 'user', content: msg.content })
+            // User messages are stored as AgentMessage objects with content array
+            if (Array.isArray(msg.content)) {
+              const text = msg.content
+                .filter((c: any) => c.type === 'text')
+                .map((c: any) => c.text)
+                .join('')
+              if (text) {
+                historyMessages.push({ role: 'user', content: text })
+              }
+            } else if (typeof msg.content === 'string') {
+              // Fallback for legacy messages
+              historyMessages.push({ role: 'user', content: msg.content })
+            }
           } else if (msg.role === 'assistant' && Array.isArray(msg.content)) {
             const text = msg.content
               .filter((c: any) => c.type === 'text')
@@ -280,6 +299,8 @@ export function App() {
       })
     } finally {
       setIsLoading(false)
+      // Focus back to input after conversation ends
+      inputRef.current?.focus()
     }
   }
 
@@ -347,10 +368,12 @@ export function App() {
           {messages.map((msg, idx) => (
             <ChatMessage key={idx} role={msg.role} content={msg.content} />
           ))}
+          <div ref={messagesEndRef} />
         </div>
 
         <form id="input-form" onSubmit={handleSubmit}>
           <input
+            ref={inputRef}
             type="text"
             id="message-input"
             placeholder="Type your message..."

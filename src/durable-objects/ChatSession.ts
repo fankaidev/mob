@@ -11,6 +11,7 @@ import type { DurableObjectState } from '@cloudflare/workers-types'
 import { Agent } from '../lib/pi-agent'
 import type { AgentMessage } from '../lib/pi-agent/types'
 import type { Model } from '../lib/pi-ai/types'
+import { createBashTool } from '../lib/tools/bash'
 
 interface Env {
   DB: D1Database
@@ -205,12 +206,36 @@ export class ChatSession {
       const modelConfig = this.buildModel(baseUrl, model, provider)
       console.log('Model:', modelConfig)
 
+      // Create bash tool for command execution with D1 persistence
+      const bashTool = createBashTool({
+        sessionId: this.sessionId,
+        db: this.env.DB
+      })
+
       const agent = new Agent({
         initialState: {
           model: modelConfig,
           systemPrompt: `You are a helpful AI assistant built with Hono and Cloudflare Workers.
-Be concise and friendly. Format your responses using markdown when appropriate.`,
-          tools: [],
+Be concise and friendly. Format your responses using markdown when appropriate.
+
+You have access to a bash tool that allows you to execute shell commands in an isolated environment.
+Use it when you need to:
+- Process or manipulate text data
+- Perform file operations (files are persisted across conversations)
+- Run calculations or data transformations
+- Execute any standard Unix commands
+
+Important notes:
+- Files you create are automatically saved to the database
+- Files persist across conversations in the same session
+- The filesystem starts at /tmp as the working directory
+
+Examples:
+- List files: bash with command "ls -la"
+- Create file: bash with command "echo 'Hello World' > hello.txt"
+- Search text: bash with command "grep 'pattern' file.txt"
+- Process data: bash with command "cat data.txt | sort | uniq"`,
+          tools: [bashTool],
           messages: this.messages,
         },
         getApiKey: async () => apiKey,
