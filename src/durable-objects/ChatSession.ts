@@ -15,7 +15,7 @@ import type { Model } from '../lib/pi-ai/types'
 import { createFilesystemContext, createBashTool } from '../lib/tools/bash'
 import { createReadTool, createWriteTool, createEditTool, createListTool } from '../lib/tools/file-tools'
 import { createMountTool, createUnmountTool, createListMountsTool } from '../lib/tools/mount-tools'
-import { InMemoryFs, MountableFs } from '../lib/fs'
+import { D1FileSystem, MountableFs } from '../lib/fs'
 import { restoreMounts } from '../lib/fs/mount-store'
 
 interface Env {
@@ -64,11 +64,12 @@ export class ChatSession {
       this.messages = result.results.map((row: any) => JSON.parse(row.content))
     }
 
-    // Initialize MountableFs with InMemoryFs base
-    const baseFs = new InMemoryFs()
+    // Initialize MountableFs with D1FileSystem base for persistent storage
+    const baseFs = new D1FileSystem(this.env.DB, this.sessionId)
+    await baseFs.initializeDefaultDirectories()
     this.mountableFs = new MountableFs({ base: baseFs })
 
-    // Create /mnt directory for mounts
+    // Create /mnt directory for git mounts
     try {
       await this.mountableFs.mkdir('/mnt', { recursive: true })
     } catch {

@@ -1,6 +1,6 @@
 import { Type, type Static } from '@sinclair/typebox'
 import type { AgentTool } from '../pi-agent/types'
-import type { Bash } from '../just-bash/src/Bash'
+import type { Bash } from 'just-bash'
 
 // ============================================================================
 // Read Tool

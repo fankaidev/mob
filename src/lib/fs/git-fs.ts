@@ -8,7 +8,7 @@
  * One Map, two interfaces, no adapter layer.
  */
 
-import type { IFileSystem, MkdirOptions, RmOptions, ReadFileOptions, WriteFileOptions, BufferEncoding } from 'just-bash'
+import type { IFileSystem, MkdirOptions, RmOptions, BufferEncoding } from 'just-bash'
 
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
@@ -148,7 +148,7 @@ export function createGitFs() {
   // -- IFileSystem interface (for MountableFs + bash tool) --
 
   const ifs: IFileSystem = {
-    async readFile(path: string, _opts?: ReadFileOptions | BufferEncoding): Promise<string> {
+    async readFile(path: string, _opts?: { encoding?: BufferEncoding } | BufferEncoding): Promise<string> {
       // IFileSystem.readFile always returns string
       return readFileImpl(path, { encoding: "utf8" }) as Promise<string>
     },
