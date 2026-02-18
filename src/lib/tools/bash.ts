@@ -53,10 +53,43 @@ interface BashToolOptions {
   fs: IFileSystem
 }
 
-export function createBashTool(options: BashToolOptions): AgentTool<typeof bashSchema> {
+/**
+ * Create a shared filesystem context for tools
+ * This allows bash and file tools to share the same filesystem instance
+ */
+export function createFilesystemContext(options: BashToolOptions) {
   let bashInstance: Bash | null = null
   const { fs } = options
 
+  const initBash = async () => {
+    if (!bashInstance) {
+      // Ensure process shim is available for just-bash
+      ensureProcessShim()
+
+      // Create bash with external filesystem (MountableFs)
+      bashInstance = new Bash({
+        cwd: '/tmp',
+        fs: fs,
+      })
+      console.log(`Created bash instance with external filesystem`)
+    }
+    return bashInstance
+  }
+
+  // No-op since we use MountableFs which handles persistence via mount-store
+  const saveFiles = async () => {
+    // Files are persisted via mount records in D1, not individual files
+  }
+
+  return {
+    getBash: () => bashInstance,
+    initBash,
+    saveFiles,
+    fs,
+  }
+}
+
+export function createBashTool(context: ReturnType<typeof createFilesystemContext>): AgentTool<typeof bashSchema> {
   return {
     label: 'Bash',
     name: 'bash',
@@ -69,17 +102,7 @@ export function createBashTool(options: BashToolOptions): AgentTool<typeof bashS
       }
 
       // Initialize bash instance on first use
-      if (!bashInstance) {
-        // Ensure process shim is available for just-bash
-        ensureProcessShim()
-
-        // Create bash with external filesystem
-        bashInstance = new Bash({
-          cwd: '/tmp',
-          fs: fs,
-        })
-        console.log(`Created bash instance with external filesystem`)
-      }
+      const bashInstance = await context.initBash()
 
       try {
         // Execute the command

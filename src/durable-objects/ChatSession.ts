@@ -12,7 +12,8 @@ import type { DurableObjectState } from '@cloudflare/workers-types'
 import { Agent } from '../lib/pi-agent'
 import type { AgentMessage } from '../lib/pi-agent/types'
 import type { Model } from '../lib/pi-ai/types'
-import { createBashTool } from '../lib/tools/bash'
+import { createFilesystemContext, createBashTool } from '../lib/tools/bash'
+import { createReadTool, createWriteTool, createEditTool, createListTool } from '../lib/tools/file-tools'
 import { createMountTool, createUnmountTool, createListMountsTool } from '../lib/tools/mount-tools'
 import { InMemoryFs, MountableFs } from '../lib/fs'
 import { restoreMounts } from '../lib/fs/mount-store'
@@ -225,22 +226,29 @@ export class ChatSession {
       const modelConfig = this.buildModel(baseUrl, model, provider)
       console.log('Model:', modelConfig)
 
-      // Create tools with shared MountableFs
-      const toolOptions = {
-        sessionId: this.sessionId,
-        db: this.env.DB,
-        mountableFs: this.mountableFs!,
-      }
-
-      const bashTool = createBashTool({
+      // Create shared filesystem context for all tools
+      const fsContext = createFilesystemContext({
         sessionId: this.sessionId,
         db: this.env.DB,
         fs: this.mountableFs!,
       })
 
-      const mountTool = createMountTool(toolOptions)
-      const unmountTool = createUnmountTool(toolOptions)
-      const listMountsTool = createListMountsTool(toolOptions)
+      // Create file operation tools
+      const bashTool = createBashTool(fsContext)
+      const readTool = createReadTool(fsContext.getBash)
+      const writeTool = createWriteTool(fsContext.getBash, fsContext.saveFiles)
+      const editTool = createEditTool(fsContext.getBash, fsContext.saveFiles)
+      const listTool = createListTool(fsContext.getBash)
+
+      // Create mount tools with shared MountableFs
+      const mountToolOptions = {
+        sessionId: this.sessionId,
+        db: this.env.DB,
+        mountableFs: this.mountableFs!,
+      }
+      const mountTool = createMountTool(mountToolOptions)
+      const unmountTool = createUnmountTool(mountToolOptions)
+      const listMountsTool = createListMountsTool(mountToolOptions)
 
       const agent = new Agent({
         initialState: {
@@ -248,34 +256,39 @@ export class ChatSession {
           systemPrompt: `You are a helpful AI assistant built with Hono and Cloudflare Workers.
 Be concise and friendly. Format your responses using markdown when appropriate.
 
-You have access to several tools:
+You have access to the following tools:
 
-## bash
-Execute shell commands in an isolated environment.
-- File operations: cat, ls, cp, mv, rm, mkdir, touch, head, tail, grep, sed, awk, find
-- Text processing: echo, printf, wc, sort, uniq, tr, cut
-- The filesystem starts at /tmp as the working directory
-- Use 'ls /mnt' to see mounted repositories
+**File Operations:**
+- read: Read the contents of a file
+- write: Write content to a file (creates or overwrites)
+- edit: Edit a file by replacing specific text
+- list: List files and directories
 
-## mount
-Clone and mount a git repository to browse its files.
-- Example: mount({ url: "https://github.com/owner/repo.git", mount_path: "/mnt/repo" })
-- After mounting, browse files with: bash({ command: "ls /mnt/repo" })
-- Supports private repos with token parameter
+**Bash Commands:**
+- bash: Execute shell commands (ls, cat, grep, sed, awk, find, etc.)
 
-## unmount
-Remove a mounted repository.
-- Example: unmount({ mount_path: "/mnt/repo" })
+**Git Repository Mounting:**
+- mount: Clone and mount a git repository to browse its files
+- unmount: Remove a mounted repository
+- list_mounts: List all currently mounted repositories
 
-## list_mounts
-List all currently mounted repositories.
+All file operations work with the shared filesystem. The filesystem starts at /tmp as the working directory.
+Use 'ls /mnt' or list with path="/mnt" to see mounted repositories.
 
-Workflow example for browsing a git repository:
+**When to use each tool:**
+- Use \`read\` to view file contents
+- Use \`write\` to create new files or completely replace file contents
+- Use \`edit\` to make specific changes to existing files
+- Use \`list\` to see what files exist
+- Use \`bash\` for complex operations, piping, or text processing
+- Use \`mount\` to clone a git repository for browsing
+
+**Workflow example for browsing a git repository:**
 1. Mount the repo: mount({ url: "https://github.com/facebook/react.git", mount_path: "/mnt/react" })
-2. List files: bash({ command: "ls /mnt/react" })
-3. Read a file: bash({ command: "cat /mnt/react/README.md" })
+2. List files: list({ path: "/mnt/react" }) or bash({ command: "ls /mnt/react" })
+3. Read a file: read({ path: "/mnt/react/README.md" })
 4. Search code: bash({ command: "grep -r 'useState' /mnt/react/packages --include='*.js'" })`,
-          tools: [bashTool, mountTool, unmountTool, listMountsTool],
+          tools: [readTool, writeTool, editTool, listTool, bashTool, mountTool, unmountTool, listMountsTool],
           messages: this.messages,
         },
         getApiKey: async () => apiKey,
