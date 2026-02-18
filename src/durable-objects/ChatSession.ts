@@ -260,11 +260,6 @@ Use 'ls /mnt' or list with path="/mnt" to see mounted repositories.
     systemPrompt?: string
   ) {
     try {
-      console.log('Starting chat session:', this.sessionId)
-      console.log('Message:', message)
-      console.log('Base URL:', baseUrl)
-      console.log('API Key length:', apiKey?.length || 0)
-
       // Send session ID
       await writer.write(encoder.encode(
         `data: ${JSON.stringify({ type: 'session_id', sessionId: this.sessionId })}\n\n`
@@ -272,7 +267,6 @@ Use 'ls /mnt' or list with path="/mnt" to see mounted repositories.
 
       // Create agent with existing messages
       const modelConfig = this.buildModel(baseUrl, model, provider)
-      console.log('Model:', modelConfig)
 
       // Create shared filesystem context for all tools
       const fsContext = createFilesystemContext({
@@ -322,24 +316,19 @@ Use 'ls /mnt' or list with path="/mnt" to see mounted repositories.
       // Subscribe to agent events for streaming
       agent.subscribe(async (event) => {
         eventCount++
-        console.log('Agent event:', event.type, 'count:', eventCount)
-        console.log('Event details:', JSON.stringify(event, null, 2))
 
         // Extract text from message updates
         if (event.type === 'message_update' && event.message.role === 'assistant') {
-          console.log('Assistant message update, content:', JSON.stringify(event.message.content))
           const content = event.message.content
           if (Array.isArray(content)) {
             const textParts = content
               .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
               .map(c => c.text)
 
-            console.log('Text parts:', textParts)
             if (textParts.length > 0) {
               const fullText = textParts.join('')
               // Send only the new delta
               const deltaText = fullText.slice(previousTextLength)
-              console.log('Delta text:', deltaText, 'length:', deltaText.length)
               if (deltaText) {
                 await writer.write(encoder.encode(
                   `data: ${JSON.stringify({ type: 'text', text: deltaText })}\n\n`
@@ -352,9 +341,7 @@ Use 'ls /mnt' or list with path="/mnt" to see mounted repositories.
       })
 
       // Run agent
-      console.log('Calling agent.prompt()...')
       await agent.prompt(message)
-      console.log('Agent.prompt() completed, event count:', eventCount)
 
       // Update in-memory messages
       this.messages = agent.state.messages.map((msg) =>
