@@ -1,0 +1,18 @@
+/**
+ * Backend copy of typebox-helpers.
+ * Copied from frontend/src/lib/pi-ai/src/utils/typebox-helpers.ts
+ */
+
+import { type TUnsafe, Type } from "@sinclair/typebox";
+
+export function StringEnum<T extends readonly string[]>(
+	values: T,
+	options?: { description?: string; default?: T[number] },
+): TUnsafe<T[number]> {
+	return Type.Unsafe<T[number]>({
+		type: "string",
+		enum: values as any,
+		...(options?.description && { description: options.description }),
+		...(options?.default && { default: options.default }),
+	});
+}

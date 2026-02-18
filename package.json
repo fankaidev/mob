@@ -1,0 +1,36 @@
+{
+  "name": "mob",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite build --watch --mode development & wrangler dev",
+    "build": "vite build",
+    "deploy": "vite build && wrangler deploy",
+    "setup:d1": "bash scripts/setup-d1.sh",
+    "d1:local": "wrangler d1 execute mob-session --local --file=schema.sql",
+    "d1:remote": "wrangler d1 execute mob-session --remote --file=schema.sql",
+    "d1:console": "wrangler d1 execute mob-session --local --command"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.74.0",
+    "@sinclair/typebox": "^0.34.48",
+    "hono": "^4.11.1",
+    "partial-json": "^0.1.7",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20251225.0",
+    "@types/node": "^22.14.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.4",
+    "typescript": "^5.7.2",
+    "vite": "^6.3.5",
+    "wrangler": "^4.56.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

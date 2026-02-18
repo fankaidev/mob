@@ -1,0 +1,42 @@
+{
+  "name": "mob",
+  "compatibility_date": "2024-01-01",
+  "main": "src/index.ts",
+  "assets": {
+    "directory": "./public"
+  },
+  "send_metrics": false,
+  "observability": {
+    "enabled": true
+  },
+
+  // Durable Objects configuration
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "CHAT_SESSION",
+        "class_name": "ChatSession"
+      }
+    ]
+  },
+
+  // Durable Objects migrations
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["ChatSession"]
+    }
+  ],
+
+  // D1 Database configuration
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "mob-session",
+      "database_id": "18e26266-e2b7-469b-aca4-e70891a1a6e2"
+    }
+  ]
+
+  // Note: Run `npm run setup:d1` to create the database
+  // and automatically update the database_id
+}
