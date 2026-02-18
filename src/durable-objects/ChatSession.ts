@@ -9,14 +9,14 @@
  */
 
 import type { DurableObjectState } from '@cloudflare/workers-types'
+import { D1FileSystem, MountableFs } from '../lib/fs'
+import { restoreMounts } from '../lib/fs/mount-store'
 import { Agent } from '../lib/pi-agent'
 import type { AgentMessage } from '../lib/pi-agent/types'
 import type { Model } from '../lib/pi-ai/types'
-import { createFilesystemContext, createBashTool } from '../lib/tools/bash'
-import { createReadTool, createWriteTool, createEditTool, createListTool } from '../lib/tools/file-tools'
-import { createMountTool, createUnmountTool, createListMountsTool } from '../lib/tools/mount-tools'
-import { D1FileSystem, MountableFs } from '../lib/fs'
-import { restoreMounts } from '../lib/fs/mount-store'
+import { createBashTool, createFilesystemContext } from '../lib/tools/bash'
+import { createEditTool, createListTool, createReadTool, createWriteTool } from '../lib/tools/file-tools'
+import { createListMountsTool, createMountTool, createUnmountTool } from '../lib/tools/mount-tools'
 
 interface Env {
   DB: D1Database
@@ -218,14 +218,20 @@ You have access to the following tools:
 - list: List files and directories
 
 **Bash Commands:**
-- bash: Execute shell commands (ls, cat, grep, sed, awk, find, etc.)
+- bash: Execute shell commands (ls, cat, grep, sed, awk, find, etc.), only selected commands are supported.
 
 **Git Repository Mounting:**
 - mount: Clone and mount a git repository to browse its files
 - unmount: Remove a mounted repository
 - list_mounts: List all currently mounted repositories
 
-All file operations work with the shared filesystem. The filesystem starts at /tmp as the working directory.
+All file operations work with the shared filesystem. The filesystem starts at /work as the working directory.
+
+**File Persistence:**
+- Files under /work are **shared and persistent** across all sessions
+- Other directories (like /tmp) are session-isolated
+- Always save important files to /work for persistence
+
 Use 'ls /mnt' or list with path="/mnt" to see mounted repositories.
 
 **When to use each tool:**
@@ -299,10 +305,16 @@ Use 'ls /mnt' or list with path="/mnt" to see mounted repositories.
         ? contextMessages
         : this.messages
 
+      // Build final system prompt: default + optional custom prompt appended
+      const defaultPrompt = this.getDefaultSystemPrompt()
+      const finalSystemPrompt = systemPrompt
+        ? `${defaultPrompt}\n\n---\n\n${systemPrompt}`
+        : defaultPrompt
+
       const agent = new Agent({
         initialState: {
           model: modelConfig,
-          systemPrompt: systemPrompt || this.getDefaultSystemPrompt(),
+          systemPrompt: finalSystemPrompt,
           tools: [readTool, writeTool, editTool, listTool, bashTool, mountTool, unmountTool, listMountsTool],
           messages: initialMessages,
         },

@@ -210,7 +210,7 @@ export function createEditTool(
 // ============================================================================
 const listSchema = Type.Object({
   path: Type.Optional(Type.String({
-    description: 'Path to list files from (defaults to /tmp)'
+    description: 'Path to list files from (defaults to /work)'
   })),
   recursive: Type.Optional(Type.Boolean({
     description: 'Whether to list files recursively (default: false)'
@@ -272,7 +272,7 @@ export function createListTool(getBash: () => Bash | null): AgentTool<typeof lis
         }
       }
 
-      const dirPath = args.path || '/tmp'
+      const dirPath = args.path || '/work'
       const recursive = args.recursive || false
 
       try {
