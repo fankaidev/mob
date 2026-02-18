@@ -14,6 +14,14 @@ interface Session {
   status: string
 }
 
+interface LLMConfig {
+  name: string
+  provider: string
+  base_url: string
+  api_key?: string
+  model: string
+}
+
 export function App() {
   const [messages, setMessages] = useState<Message[]>([])
   const [inputValue, setInputValue] = useState('')
@@ -22,12 +30,8 @@ export function App() {
   const [sessionId, setSessionId] = useState('')
   const [sessions, setSessions] = useState<Session[]>([])
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
-  const [settings, setSettings] = useState({
-    baseUrl: '',
-    apiKey: '',
-    model: '',
-    provider: ''
-  })
+  const [selectedConfig, setSelectedConfig] = useState<LLMConfig | null>(null)
+  const [selectedConfigName, setSelectedConfigName] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -36,7 +40,7 @@ export function App() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // Initialize session ID and settings
+  // Initialize session ID and load saved config
   useEffect(() => {
     let sid = localStorage.getItem('mob-session-id')
     if (!sid) {
@@ -45,38 +49,46 @@ export function App() {
     }
     setSessionId(sid)
 
-    const savedBaseUrl = localStorage.getItem('api-base-url')
-    const savedApiKey = localStorage.getItem('api-key')
-    const savedModel = localStorage.getItem('api-model')
-    const savedProvider = localStorage.getItem('api-provider')
-
-    setSettings({
-      baseUrl: savedBaseUrl || '',
-      apiKey: savedApiKey || '',
-      model: savedModel || '',
-      provider: savedProvider || ''
-    })
-
-    // Check if API key is configured
-    if (!savedApiKey) {
-      setIsSettingsOpen(true)
+    // Load saved config name from localStorage
+    const savedConfigName = localStorage.getItem('selected-llm-config')
+    if (savedConfigName) {
+      setSelectedConfigName(savedConfigName)
+      // Try to load the full config
+      loadSelectedConfig(savedConfigName)
     } else {
-      loadHistory(sid)
-      loadSessions()
+      // No config selected, open settings
+      setIsSettingsOpen(true)
     }
+
+    loadHistory(sid)
+    loadSessions()
   }, [])
+
+  const loadSelectedConfig = async (configName: string) => {
+    try {
+      const response = await fetch(`/api/admin/llm-configs/${configName}`)
+      if (response.ok) {
+        const data = await response.json() as { config: LLMConfig }
+        setSelectedConfig(data.config)
+        setSelectedConfigName(configName)
+      } else {
+        // Config not found, clear selection
+        localStorage.removeItem('selected-llm-config')
+        setSelectedConfigName(null)
+        setSelectedConfig(null)
+        setIsSettingsOpen(true)
+      }
+    } catch (error) {
+      console.error('Failed to load selected config:', error)
+    }
+  }
 
   const loadSessions = async () => {
     try {
-      console.log('Loading sessions...')
       const response = await fetch('/api/sessions')
-      console.log('Sessions response status:', response.status)
       if (response.ok) {
         const data = await response.json() as { sessions: Session[] }
-        console.log('Sessions loaded:', data.sessions)
         setSessions(data.sessions)
-      } else {
-        console.error('Failed to load sessions, status:', response.status)
       }
     } catch (error) {
       console.error('Failed to load sessions:', error)
@@ -92,7 +104,6 @@ export function App() {
 
         data.messages.forEach((msg: any) => {
           if (msg.role === 'user' && msg.content) {
-            // User messages are stored as AgentMessage objects with content array
             if (Array.isArray(msg.content)) {
               const text = msg.content
                 .filter((c: any) => c.type === 'text')
@@ -102,7 +113,6 @@ export function App() {
                 historyMessages.push({ role: 'user', content: text })
               }
             } else if (typeof msg.content === 'string') {
-              // Fallback for legacy messages
               historyMessages.push({ role: 'user', content: msg.content })
             }
           } else if (msg.role === 'assistant' && Array.isArray(msg.content)) {
@@ -131,7 +141,6 @@ export function App() {
     setSessionId(newSessionId)
     setMessages([])
 
-    // Add new session to the list immediately (optimistic update)
     const newSession: Session = {
       id: newSessionId,
       created_at: now,
@@ -161,15 +170,11 @@ export function App() {
       })
 
       if (response.ok) {
-        // If deleting current session, create a new one
         if (sid === sessionId) {
           createNewSession()
         } else {
-          // Just reload the sessions list
           loadSessions()
         }
-      } else {
-        console.error('Failed to delete session')
       }
     } catch (error) {
       console.error('Failed to delete session:', error)
@@ -188,25 +193,21 @@ export function App() {
     return `${dateStr} ${timeStr}`
   }
 
-  const handleSaveSettings = (baseUrl: string, apiKey: string, model: string, provider: string) => {
-    localStorage.setItem('api-base-url', baseUrl)
-    localStorage.setItem('api-key', apiKey)
-    localStorage.setItem('api-model', model)
-    localStorage.setItem('api-provider', provider)
-    setSettings({ baseUrl, apiKey, model, provider })
-
-    if (apiKey) {
-      if (messages.length === 0) {
-        loadHistory(sessionId)
-      }
-      loadSessions()
+  const handleSelectConfig = (config: LLMConfig | null) => {
+    setSelectedConfig(config)
+    if (config) {
+      setSelectedConfigName(config.name)
+      localStorage.setItem('selected-llm-config', config.name)
+    } else {
+      setSelectedConfigName(null)
+      localStorage.removeItem('selected-llm-config')
     }
   }
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
 
-    if (!settings.apiKey) {
+    if (!selectedConfig) {
       setIsSettingsOpen(true)
       return
     }
@@ -214,12 +215,10 @@ export function App() {
     const message = inputValue.trim()
     if (!message) return
 
-    // Add user message
     setMessages([...messages, { role: 'user', content: message }])
     setInputValue('')
     setIsLoading(true)
 
-    // Add loading indicator
     const loadingMessage: Message = { role: 'assistant', content: '...' }
     setMessages(prev => [...prev, loadingMessage])
 
@@ -229,10 +228,10 @@ export function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message,
-          baseUrl: settings.baseUrl,
-          apiKey: settings.apiKey,
-          model: settings.model,
-          provider: settings.provider
+          baseUrl: selectedConfig.base_url,
+          apiKey: selectedConfig.api_key,
+          model: selectedConfig.model,
+          provider: selectedConfig.provider
         }),
       })
 
@@ -258,7 +257,6 @@ export function App() {
               const event = JSON.parse(data)
               if (event.type === 'text') {
                 assistantMessage += event.text
-                // Update last message (remove loading, update with real content)
                 setMessages(prev => {
                   const newMessages = [...prev]
                   newMessages[newMessages.length - 1] = {
@@ -299,7 +297,6 @@ export function App() {
       })
     } finally {
       setIsLoading(false)
-      // Focus back to input after conversation ends
       inputRef.current?.focus()
     }
   }
@@ -357,10 +354,13 @@ export function App() {
             <button className="menu-btn" onClick={() => setIsSidebarOpen(!isSidebarOpen)}>
               ☰
             </button>
-            <h1>🤖 Mob Chat</h1>
+            <h1>Mob Chat</h1>
+            {selectedConfigName && (
+              <span className="config-badge">{selectedConfigName}</span>
+            )}
           </div>
           <button className="settings-btn" onClick={() => setIsSettingsOpen(true)}>
-            ⚙️ Settings
+            Settings
           </button>
         </header>
 
@@ -376,23 +376,20 @@ export function App() {
             ref={inputRef}
             type="text"
             id="message-input"
-            placeholder="Type your message..."
+            placeholder={selectedConfig ? "Type your message..." : "Select a config in Settings first..."}
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
-            disabled={isLoading}
+            disabled={isLoading || !selectedConfig}
           />
-          <button type="submit" disabled={isLoading}>Send</button>
+          <button type="submit" disabled={isLoading || !selectedConfig}>Send</button>
         </form>
       </div>
 
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
-        onSave={handleSaveSettings}
-        initialBaseUrl={settings.baseUrl}
-        initialApiKey={settings.apiKey}
-        initialModel={settings.model}
-        initialProvider={settings.provider}
+        onSelectConfig={handleSelectConfig}
+        selectedConfigName={selectedConfigName}
       />
     </div>
   )

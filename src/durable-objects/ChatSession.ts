@@ -140,12 +140,14 @@ export class ChatSession {
 
     // POST /chat - Send message and get streaming response
     if (request.method === 'POST' && url.pathname === '/chat') {
-      const { message, baseUrl, apiKey, model, provider } = await request.json() as {
+      const { message, baseUrl, apiKey, model, provider, contextMessages, systemPrompt } = await request.json() as {
         message: string
         baseUrl: string
         apiKey: string
         model: string
         provider: string
+        contextMessages?: AgentMessage[]
+        systemPrompt?: string
       }
 
       if (!message?.trim()) {
@@ -182,7 +184,7 @@ export class ChatSession {
       const encoder = new TextEncoder()
 
       // Handle chat in background
-      this.handleChat(message, baseUrl, apiKey, model, provider, writer, encoder).catch((error) => {
+      this.handleChat(message, baseUrl, apiKey, model, provider, writer, encoder, contextMessages, systemPrompt).catch((error) => {
         console.error('Chat error:', error)
         writer.write(encoder.encode(`data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`))
         writer.close()
@@ -201,60 +203,10 @@ export class ChatSession {
   }
 
   /**
-   * Handle chat message with streaming
+   * Default system prompt
    */
-  private async handleChat(
-    message: string,
-    baseUrl: string,
-    apiKey: string,
-    model: string,
-    provider: string,
-    writer: WritableStreamDefaultWriter,
-    encoder: TextEncoder
-  ) {
-    try {
-      console.log('Starting chat session:', this.sessionId)
-      console.log('Message:', message)
-      console.log('Base URL:', baseUrl)
-      console.log('API Key length:', apiKey?.length || 0)
-
-      // Send session ID
-      await writer.write(encoder.encode(
-        `data: ${JSON.stringify({ type: 'session_id', sessionId: this.sessionId })}\n\n`
-      ))
-
-      // Create agent with existing messages
-      const modelConfig = this.buildModel(baseUrl, model, provider)
-      console.log('Model:', modelConfig)
-
-      // Create shared filesystem context for all tools
-      const fsContext = createFilesystemContext({
-        sessionId: this.sessionId,
-        db: this.env.DB,
-        fs: this.mountableFs!,
-      })
-
-      // Create file operation tools
-      const bashTool = createBashTool(fsContext)
-      const readTool = createReadTool(fsContext.getBash)
-      const writeTool = createWriteTool(fsContext.getBash, fsContext.saveFiles)
-      const editTool = createEditTool(fsContext.getBash, fsContext.saveFiles)
-      const listTool = createListTool(fsContext.getBash)
-
-      // Create mount tools with shared MountableFs
-      const mountToolOptions = {
-        sessionId: this.sessionId,
-        db: this.env.DB,
-        mountableFs: this.mountableFs!,
-      }
-      const mountTool = createMountTool(mountToolOptions)
-      const unmountTool = createUnmountTool(mountToolOptions)
-      const listMountsTool = createListMountsTool(mountToolOptions)
-
-      const agent = new Agent({
-        initialState: {
-          model: modelConfig,
-          systemPrompt: `You are a helpful AI assistant built with Hono and Cloudflare Workers.
+  private getDefaultSystemPrompt(): string {
+    return `You are a helpful AI assistant built with Hono and Cloudflare Workers.
 Be concise and friendly. Format your responses using markdown when appropriate.
 
 You have access to the following tools:
@@ -288,9 +240,71 @@ Use 'ls /mnt' or list with path="/mnt" to see mounted repositories.
 1. Mount the repo: mount({ url: "https://github.com/facebook/react.git", mount_path: "/mnt/react" })
 2. List files: list({ path: "/mnt/react" }) or bash({ command: "ls /mnt/react" })
 3. Read a file: read({ path: "/mnt/react/README.md" })
-4. Search code: bash({ command: "grep -r 'useState' /mnt/react/packages --include='*.js'" })`,
+4. Search code: bash({ command: "grep -r 'useState' /mnt/react/packages --include='*.js'" })`
+  }
+
+  /**
+   * Handle chat message with streaming
+   * @param contextMessages - Optional messages from external context (e.g., Slack thread history)
+   * @param systemPrompt - Optional custom system prompt
+   */
+  private async handleChat(
+    message: string,
+    baseUrl: string,
+    apiKey: string,
+    model: string,
+    provider: string,
+    writer: WritableStreamDefaultWriter,
+    encoder: TextEncoder,
+    contextMessages?: AgentMessage[],
+    systemPrompt?: string
+  ) {
+    try {
+      // Send session ID
+      await writer.write(encoder.encode(
+        `data: ${JSON.stringify({ type: 'session_id', sessionId: this.sessionId })}\n\n`
+      ))
+
+      // Create agent with existing messages
+      const modelConfig = this.buildModel(baseUrl, model, provider)
+
+      // Create shared filesystem context for all tools
+      const fsContext = createFilesystemContext({
+        sessionId: this.sessionId,
+        db: this.env.DB,
+        fs: this.mountableFs!,
+      })
+
+      // Create file operation tools
+      const bashTool = createBashTool(fsContext)
+      const readTool = createReadTool(fsContext.getBash)
+      const writeTool = createWriteTool(fsContext.getBash, fsContext.saveFiles)
+      const editTool = createEditTool(fsContext.getBash, fsContext.saveFiles)
+      const listTool = createListTool(fsContext.getBash)
+
+      // Create mount tools with shared MountableFs
+      const mountToolOptions = {
+        sessionId: this.sessionId,
+        db: this.env.DB,
+        mountableFs: this.mountableFs!,
+      }
+      const mountTool = createMountTool(mountToolOptions)
+      const unmountTool = createUnmountTool(mountToolOptions)
+      const listMountsTool = createListMountsTool(mountToolOptions)
+
+      // Determine which messages to use:
+      // - If contextMessages provided (e.g., from Slack thread), use those
+      // - Otherwise use stored session messages
+      const initialMessages = contextMessages && contextMessages.length > 0
+        ? contextMessages
+        : this.messages
+
+      const agent = new Agent({
+        initialState: {
+          model: modelConfig,
+          systemPrompt: systemPrompt || this.getDefaultSystemPrompt(),
           tools: [readTool, writeTool, editTool, listTool, bashTool, mountTool, unmountTool, listMountsTool],
-          messages: this.messages,
+          messages: initialMessages,
         },
         getApiKey: async () => apiKey,
       })
@@ -302,24 +316,19 @@ Use 'ls /mnt' or list with path="/mnt" to see mounted repositories.
       // Subscribe to agent events for streaming
       agent.subscribe(async (event) => {
         eventCount++
-        console.log('Agent event:', event.type, 'count:', eventCount)
-        console.log('Event details:', JSON.stringify(event, null, 2))
 
         // Extract text from message updates
         if (event.type === 'message_update' && event.message.role === 'assistant') {
-          console.log('Assistant message update, content:', JSON.stringify(event.message.content))
           const content = event.message.content
           if (Array.isArray(content)) {
             const textParts = content
               .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
               .map(c => c.text)
 
-            console.log('Text parts:', textParts)
             if (textParts.length > 0) {
               const fullText = textParts.join('')
               // Send only the new delta
               const deltaText = fullText.slice(previousTextLength)
-              console.log('Delta text:', deltaText, 'length:', deltaText.length)
               if (deltaText) {
                 await writer.write(encoder.encode(
                   `data: ${JSON.stringify({ type: 'text', text: deltaText })}\n\n`
@@ -332,9 +341,7 @@ Use 'ls /mnt' or list with path="/mnt" to see mounted repositories.
       })
 
       // Run agent
-      console.log('Calling agent.prompt()...')
       await agent.prompt(message)
-      console.log('Agent.prompt() completed, event count:', eventCount)
 
       // Update in-memory messages
       this.messages = agent.state.messages.map((msg) =>
