@@ -89,6 +89,7 @@ CREATE TABLE IF NOT EXISTS slack_apps (
 CREATE INDEX IF NOT EXISTS idx_slack_apps_app_id ON slack_apps(app_id);
 
 -- Slack thread mapping table - maps Slack threads to chat sessions
+-- Note: Foreign keys removed to avoid timing issues with DO session creation
 CREATE TABLE IF NOT EXISTS slack_thread_mapping (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   thread_key TEXT NOT NULL UNIQUE,     -- Format: slack:{app_id}:{channel}:{thread_ts}
@@ -98,9 +99,7 @@ CREATE TABLE IF NOT EXISTS slack_thread_mapping (
   thread_ts TEXT,                      -- Thread timestamp (NULL for non-threaded)
   user_id TEXT,                        -- Slack user ID who started the thread
   created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL,
-  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
-  FOREIGN KEY (app_id) REFERENCES slack_apps(app_id)
+  updated_at INTEGER NOT NULL
 );
 
 -- Index for efficient thread lookups
