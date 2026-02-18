@@ -16,6 +16,7 @@
     "@anthropic-ai/sdk": "^0.74.0",
     "@sinclair/typebox": "^0.34.48",
     "hono": "^4.11.1",
+    "just-bash": "^2.10.2",
     "partial-json": "^0.1.7",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"

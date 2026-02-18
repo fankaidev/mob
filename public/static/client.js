@@ -21828,6 +21828,12 @@ function App() {
     model: "",
     provider: ""
   });
+  const inputRef = reactExports.useRef(null);
+  const messagesEndRef = reactExports.useRef(null);
+  reactExports.useEffect(() => {
+    var _a;
+    (_a = messagesEndRef.current) == null ? void 0 : _a.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
   reactExports.useEffect(() => {
     let sid = localStorage.getItem("mob-session-id");
     if (!sid) {
@@ -21876,7 +21882,14 @@ function App() {
         const historyMessages = [];
         data.messages.forEach((msg) => {
           if (msg.role === "user" && msg.content) {
-            historyMessages.push({ role: "user", content: msg.content });
+            if (Array.isArray(msg.content)) {
+              const text = msg.content.filter((c) => c.type === "text").map((c) => c.text).join("");
+              if (text) {
+                historyMessages.push({ role: "user", content: text });
+              }
+            } else if (typeof msg.content === "string") {
+              historyMessages.push({ role: "user", content: msg.content });
+            }
           } else if (msg.role === "assistant" && Array.isArray(msg.content)) {
             const text = msg.content.filter((c) => c.type === "text").map((c) => c.text).join("");
             if (text) {
@@ -21957,6 +21970,7 @@ function App() {
     }
   };
   const handleSubmit = async (e) => {
+    var _a;
     e.preventDefault();
     if (!settings.apiKey) {
       setIsSettingsOpen(true);
@@ -22036,6 +22050,7 @@ function App() {
       });
     } finally {
       setIsLoading(false);
+      (_a = inputRef.current) == null ? void 0 : _a.focus();
     }
   };
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", height: "100vh" }, children: [
@@ -22080,11 +22095,15 @@ function App() {
         ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "settings-btn", onClick: () => setIsSettingsOpen(true), children: "⚙️ Settings" })
       ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { id: "messages", children: messages.map((msg, idx) => /* @__PURE__ */ jsxRuntimeExports.jsx(ChatMessage, { role: msg.role, content: msg.content }, idx)) }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { id: "messages", children: [
+        messages.map((msg, idx) => /* @__PURE__ */ jsxRuntimeExports.jsx(ChatMessage, { role: msg.role, content: msg.content }, idx)),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { ref: messagesEndRef })
+      ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsxs("form", { id: "input-form", onSubmit: handleSubmit, children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx(
           "input",
           {
+            ref: inputRef,
             type: "text",
             id: "message-input",
             placeholder: "Type your message...",
