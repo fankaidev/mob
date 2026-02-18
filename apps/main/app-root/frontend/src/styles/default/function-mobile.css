@@ -1,0 +1,44 @@
+/*
+ * ==============================================
+ * 🎨 STYLE DIRECTION - Mobile
+ * Expand and develop your design based on the following style direction.
+ * ==============================================
+ * Not yet defined. Use the gen-style skill to generate a style direction.
+ *
+ * ==============================================
+ *
+ * PINNED REFERENCE — DO NOT DELETE
+ *
+ * Cards Layout (reference patterns):
+ *
+ * Dimension 1 — Direction:
+ *   - Vertical: image top, text bottom — `flex flex-col`
+ *   - Horizontal: image side, text beside — `flex flex-row`
+ *
+ * Dimension 2 — Image-container relationship:
+ *
+ *   1. No-container ★: no card background or padding — image is the visual
+ *      anchor, text sits outside. Clean and hard to mess up.
+ *      - Wrapper `flex flex-col gap-3` → Image `w-full` + Text area
+ *      - Wrapper `flex gap-3` → Image + Text area
+ *
+ *   2. Overlay ★: text/actions layered on top of image (absolute positioning)
+ *      - Card `relative overflow-hidden` → Image `w-full h-full object-cover`
+ *        + Overlay `absolute inset-x-0 bottom-0 p-4` (typically with gradient scrim)
+ *
+ *   3. Padded: image inside padding, gap between image and card edge.
+ *      Overused, generic-looking. Use sparingly.
+ *      - Card `p-4 flex flex-col gap-4` → Image `w-full` + Text area
+ *      - Card `flex gap-4 p-4` → Image `h-full` + Text area
+ *
+ *   4. Edge-to-edge: image bleeds to card edge (top or full-width), text area
+ *      has its own padding. Most generic card pattern — looks AI-generated. Avoid.
+ *      - Card `flex flex-col overflow-hidden` → Image `w-full` (no margin) + Text area `p-4`
+ *      - Card `flex overflow-hidden` → Image (flush to edge) + Text area `p-4`
+ *
+ * Additional Notes:
+ * - Colors: always use Tailwind arbitrary hex values (`bg-[#hex]`, `text-[#hex]`).
+ * - Do NOT use side accent bars (single-edge colored bars) as selection or status indicators. This pattern is extremely error-prone and strongly discouraged — avoid entirely.
+ *
+ *
+ */

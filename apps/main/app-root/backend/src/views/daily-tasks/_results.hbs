@@ -1,0 +1,42 @@
+<div id="results-container">
+    {{#if results}}
+    <div class="bg-white shadow rounded-lg p-6 mt-6">
+        <h2 class="text-lg font-semibold text-gray-800 mb-4">Execution Results</h2>
+        <div class="space-y-3 mb-4">
+            <p class="text-sm text-gray-600">
+                <span class="font-medium">Executed at:</span> {{formatDate executedAt}}
+            </p>
+            {{#if simulatedTime}}
+            <p class="text-sm text-gray-600">
+                <span class="font-medium">Simulated time:</span> {{formatDate simulatedTime}}
+            </p>
+            {{/if}}
+        </div>
+
+        <div class="space-y-3">
+            {{#if results.length}}
+                {{#each results}}
+                <div class="p-4 rounded-lg {{#if success}}bg-green-50 border border-green-200{{else}}bg-red-50 border border-red-200{{/if}}">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <span class="inline-block w-3 h-3 rounded-full mr-2 {{#if success}}bg-green-500{{else}}bg-red-500{{/if}}"></span>
+                            <code class="font-medium">{{name}}</code>
+                        </div>
+                        <span class="text-sm font-medium {{#if success}}text-green-700{{else}}text-red-700{{/if}}">
+                            {{#if success}}Success{{else}}Failed{{/if}}
+                        </span>
+                    </div>
+                    {{#if message}}
+                    <p class="mt-2 text-sm {{#if success}}text-green-700{{else}}text-red-700{{/if}}">
+                        {{message}}
+                    </p>
+                    {{/if}}
+                </div>
+                {{/each}}
+            {{else}}
+                <p class="text-gray-500">No tasks were executed</p>
+            {{/if}}
+        </div>
+    </div>
+    {{/if}}
+</div>

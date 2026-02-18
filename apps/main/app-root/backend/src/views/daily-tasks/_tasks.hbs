@@ -1,0 +1,15 @@
+<div id="tasks-container" class="bg-white shadow rounded-lg p-6 mb-6">
+    <h2 class="text-lg font-semibold text-gray-800 mb-4">Registered Tasks</h2>
+    {{#if tasks.length}}
+    <ul class="space-y-2">
+        {{#each tasks}}
+        <li class="flex items-center">
+            <span class="inline-block w-2 h-2 bg-green-500 rounded-full mr-2"></span>
+            <code class="text-sm bg-gray-100 px-2 py-1 rounded">{{this}}</code>
+        </li>
+        {{/each}}
+    </ul>
+    {{else}}
+    <p class="text-gray-500">No tasks registered</p>
+    {{/if}}
+</div>
