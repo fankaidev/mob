@@ -140,12 +140,14 @@ export class ChatSession {
 
     // POST /chat - Send message and get streaming response
     if (request.method === 'POST' && url.pathname === '/chat') {
-      const { message, baseUrl, apiKey, model, provider } = await request.json() as {
+      const { message, baseUrl, apiKey, model, provider, contextMessages, systemPrompt } = await request.json() as {
         message: string
         baseUrl: string
         apiKey: string
         model: string
         provider: string
+        contextMessages?: AgentMessage[]
+        systemPrompt?: string
       }
 
       if (!message?.trim()) {
@@ -182,7 +184,7 @@ export class ChatSession {
       const encoder = new TextEncoder()
 
       // Handle chat in background
-      this.handleChat(message, baseUrl, apiKey, model, provider, writer, encoder).catch((error) => {
+      this.handleChat(message, baseUrl, apiKey, model, provider, writer, encoder, contextMessages, systemPrompt).catch((error) => {
         console.error('Chat error:', error)
         writer.write(encoder.encode(`data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`))
         writer.close()
@@ -201,7 +203,50 @@ export class ChatSession {
   }
 
   /**
+   * Default system prompt
+   */
+  private getDefaultSystemPrompt(): string {
+    return `You are a helpful AI assistant built with Hono and Cloudflare Workers.
+Be concise and friendly. Format your responses using markdown when appropriate.
+
+You have access to the following tools:
+
+**File Operations:**
+- read: Read the contents of a file
+- write: Write content to a file (creates or overwrites)
+- edit: Edit a file by replacing specific text
+- list: List files and directories
+
+**Bash Commands:**
+- bash: Execute shell commands (ls, cat, grep, sed, awk, find, etc.)
+
+**Git Repository Mounting:**
+- mount: Clone and mount a git repository to browse its files
+- unmount: Remove a mounted repository
+- list_mounts: List all currently mounted repositories
+
+All file operations work with the shared filesystem. The filesystem starts at /tmp as the working directory.
+Use 'ls /mnt' or list with path="/mnt" to see mounted repositories.
+
+**When to use each tool:**
+- Use \`read\` to view file contents
+- Use \`write\` to create new files or completely replace file contents
+- Use \`edit\` to make specific changes to existing files
+- Use \`list\` to see what files exist
+- Use \`bash\` for complex operations, piping, or text processing
+- Use \`mount\` to clone a git repository for browsing
+
+**Workflow example for browsing a git repository:**
+1. Mount the repo: mount({ url: "https://github.com/facebook/react.git", mount_path: "/mnt/react" })
+2. List files: list({ path: "/mnt/react" }) or bash({ command: "ls /mnt/react" })
+3. Read a file: read({ path: "/mnt/react/README.md" })
+4. Search code: bash({ command: "grep -r 'useState' /mnt/react/packages --include='*.js'" })`
+  }
+
+  /**
    * Handle chat message with streaming
+   * @param contextMessages - Optional messages from external context (e.g., Slack thread history)
+   * @param systemPrompt - Optional custom system prompt
    */
   private async handleChat(
     message: string,
@@ -210,7 +255,9 @@ export class ChatSession {
     model: string,
     provider: string,
     writer: WritableStreamDefaultWriter,
-    encoder: TextEncoder
+    encoder: TextEncoder,
+    contextMessages?: AgentMessage[],
+    systemPrompt?: string
   ) {
     try {
       console.log('Starting chat session:', this.sessionId)
@@ -251,46 +298,19 @@ export class ChatSession {
       const unmountTool = createUnmountTool(mountToolOptions)
       const listMountsTool = createListMountsTool(mountToolOptions)
 
+      // Determine which messages to use:
+      // - If contextMessages provided (e.g., from Slack thread), use those
+      // - Otherwise use stored session messages
+      const initialMessages = contextMessages && contextMessages.length > 0
+        ? contextMessages
+        : this.messages
+
       const agent = new Agent({
         initialState: {
           model: modelConfig,
-          systemPrompt: `You are a helpful AI assistant built with Hono and Cloudflare Workers.
-Be concise and friendly. Format your responses using markdown when appropriate.
-
-You have access to the following tools:
-
-**File Operations:**
-- read: Read the contents of a file
-- write: Write content to a file (creates or overwrites)
-- edit: Edit a file by replacing specific text
-- list: List files and directories
-
-**Bash Commands:**
-- bash: Execute shell commands (ls, cat, grep, sed, awk, find, etc.)
-
-**Git Repository Mounting:**
-- mount: Clone and mount a git repository to browse its files
-- unmount: Remove a mounted repository
-- list_mounts: List all currently mounted repositories
-
-All file operations work with the shared filesystem. The filesystem starts at /tmp as the working directory.
-Use 'ls /mnt' or list with path="/mnt" to see mounted repositories.
-
-**When to use each tool:**
-- Use \`read\` to view file contents
-- Use \`write\` to create new files or completely replace file contents
-- Use \`edit\` to make specific changes to existing files
-- Use \`list\` to see what files exist
-- Use \`bash\` for complex operations, piping, or text processing
-- Use \`mount\` to clone a git repository for browsing
-
-**Workflow example for browsing a git repository:**
-1. Mount the repo: mount({ url: "https://github.com/facebook/react.git", mount_path: "/mnt/react" })
-2. List files: list({ path: "/mnt/react" }) or bash({ command: "ls /mnt/react" })
-3. Read a file: read({ path: "/mnt/react/README.md" })
-4. Search code: bash({ command: "grep -r 'useState' /mnt/react/packages --include='*.js'" })`,
+          systemPrompt: systemPrompt || this.getDefaultSystemPrompt(),
           tools: [readTool, writeTool, editTool, listTool, bashTool, mountTool, unmountTool, listMountsTool],
-          messages: this.messages,
+          messages: initialMessages,
         },
         getApiKey: async () => apiKey,
       })

@@ -57,3 +57,52 @@ CREATE TABLE IF NOT EXISTS mounts (
 
 -- Index for efficient mount queries
 CREATE INDEX IF NOT EXISTS idx_mounts_session_id ON mounts(session_id);
+
+-- LLM configurations table - stores API configurations for different providers
+CREATE TABLE IF NOT EXISTS llm_configs (
+  name TEXT PRIMARY KEY,               -- Config name (e.g., "claude-sonnet", "gpt-4o")
+  provider TEXT NOT NULL,              -- Provider: anthropic, openai, openrouter
+  base_url TEXT NOT NULL,              -- API endpoint URL
+  api_key TEXT NOT NULL,               -- API key (encrypted in production)
+  model TEXT NOT NULL,                 -- Model ID
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+-- Slack apps table - stores Slack app configurations
+CREATE TABLE IF NOT EXISTS slack_apps (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  app_id TEXT NOT NULL UNIQUE,         -- Slack App ID (e.g., A0XXXXXXX)
+  team_id TEXT,                        -- Slack Workspace ID
+  app_name TEXT NOT NULL,              -- Display name (e.g., "Claude Bot")
+  bot_token TEXT NOT NULL,             -- Bot token (xoxb-xxx)
+  signing_secret TEXT NOT NULL,        -- Slack signing secret for request verification
+  bot_user_id TEXT,                    -- Bot's Slack User ID (cached after first lookup)
+  llm_config_name TEXT NOT NULL,       -- Associated LLM config name
+  system_prompt TEXT,                  -- Optional: custom system prompt for this app
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (llm_config_name) REFERENCES llm_configs(name)
+);
+
+-- Index for efficient app lookups
+CREATE INDEX IF NOT EXISTS idx_slack_apps_app_id ON slack_apps(app_id);
+
+-- Slack thread mapping table - maps Slack threads to chat sessions
+CREATE TABLE IF NOT EXISTS slack_thread_mapping (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  thread_key TEXT NOT NULL UNIQUE,     -- Format: slack:{app_id}:{channel}:{thread_ts}
+  session_id TEXT NOT NULL,            -- Associated chat session ID
+  app_id TEXT NOT NULL,                -- Slack App ID that owns this thread
+  channel TEXT NOT NULL,               -- Slack channel ID
+  thread_ts TEXT,                      -- Thread timestamp (NULL for non-threaded)
+  user_id TEXT,                        -- Slack user ID who started the thread
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+  FOREIGN KEY (app_id) REFERENCES slack_apps(app_id)
+);
+
+-- Index for efficient thread lookups
+CREATE INDEX IF NOT EXISTS idx_slack_thread_key ON slack_thread_mapping(thread_key);
+CREATE INDEX IF NOT EXISTS idx_slack_thread_session ON slack_thread_mapping(session_id);
