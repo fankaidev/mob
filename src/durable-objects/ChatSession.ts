@@ -11,7 +11,8 @@ import type { DurableObjectState } from '@cloudflare/workers-types'
 import { Agent } from '../lib/pi-agent'
 import type { AgentMessage } from '../lib/pi-agent/types'
 import type { Model } from '../lib/pi-ai/types'
-import { createBashTool } from '../lib/tools/bash'
+import { createFilesystemContext, createBashTool } from '../lib/tools/bash'
+import { createReadTool, createWriteTool, createEditTool, createListTool } from '../lib/tools/file-tools'
 
 interface Env {
   DB: D1Database
@@ -206,11 +207,18 @@ export class ChatSession {
       const modelConfig = this.buildModel(baseUrl, model, provider)
       console.log('Model:', modelConfig)
 
-      // Create bash tool for command execution with D1 persistence
-      const bashTool = createBashTool({
+      // Create shared filesystem context for all file tools
+      const fsContext = createFilesystemContext({
         sessionId: this.sessionId,
         db: this.env.DB
       })
+
+      // Create file operation tools
+      const bashTool = createBashTool(fsContext)
+      const readTool = createReadTool(fsContext.getBash)
+      const writeTool = createWriteTool(fsContext.getBash, fsContext.saveFiles)
+      const editTool = createEditTool(fsContext.getBash, fsContext.saveFiles)
+      const listTool = createListTool(fsContext.getBash)
 
       const agent = new Agent({
         initialState: {
@@ -218,24 +226,34 @@ export class ChatSession {
           systemPrompt: `You are a helpful AI assistant built with Hono and Cloudflare Workers.
 Be concise and friendly. Format your responses using markdown when appropriate.
 
-You have access to a bash tool that allows you to execute shell commands in an isolated environment.
-Use it when you need to:
-- Process or manipulate text data
-- Perform file operations (files are persisted across conversations)
-- Run calculations or data transformations
-- Execute any standard Unix commands
+You have access to the following tools for working with files:
 
-Important notes:
-- Files you create are automatically saved to the database
-- Files persist across conversations in the same session
-- The filesystem starts at /tmp as the working directory
+**File Operations:**
+- read: Read the contents of a file
+- write: Write content to a file (creates or overwrites)
+- edit: Edit a file by replacing specific text
+- list: List files and directories
+
+**Bash Commands:**
+- bash: Execute shell commands (ls, cat, grep, sed, awk, find, etc.)
+
+All file operations persist to the database and are available across conversations in the same session.
+The filesystem starts at /tmp as the working directory.
+
+**When to use each tool:**
+- Use \`read\` to view file contents
+- Use \`write\` to create new files or completely replace file contents
+- Use \`edit\` to make specific changes to existing files
+- Use \`list\` to see what files exist
+- Use \`bash\` for complex operations, piping, or text processing
 
 Examples:
-- List files: bash with command "ls -la"
-- Create file: bash with command "echo 'Hello World' > hello.txt"
-- Search text: bash with command "grep 'pattern' file.txt"
-- Process data: bash with command "cat data.txt | sort | uniq"`,
-          tools: [bashTool],
+- Create file: write with path="/tmp/data.txt" and content="Hello World"
+- View file: read with path="/tmp/data.txt"
+- Edit file: edit with path="/tmp/data.txt", oldText="Hello", newText="Hi"
+- List files: list with path="/tmp"
+- Process data: bash with command="cat data.txt | sort | uniq"`,
+          tools: [readTool, writeTool, editTool, listTool, bashTool],
           messages: this.messages,
         },
         getApiKey: async () => apiKey,

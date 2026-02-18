@@ -126,10 +126,42 @@ async function loadFilesFromDB(sessionId: string, db: D1Database): Promise<Recor
   return files
 }
 
-export function createBashTool(options: BashToolOptions): AgentTool<typeof bashSchema> {
+/**
+ * Create a shared filesystem context for tools
+ * This allows bash and file tools to share the same filesystem instance
+ */
+export function createFilesystemContext(options: BashToolOptions) {
   let bashInstance: Bash | null = null
   const { sessionId, db } = options
 
+  const initBash = async () => {
+    if (!bashInstance) {
+      // Ensure process shim is available for just-bash
+      ensureProcessShim()
+
+      // Load files from D1
+      const initialFiles = await loadFilesFromDB(sessionId, db)
+      bashInstance = new Bash({ cwd: '/tmp', files: initialFiles })
+      console.log(`Loaded ${Object.keys(initialFiles).length} files from D1 for session ${sessionId}`)
+    }
+    return bashInstance
+  }
+
+  const saveFiles = async () => {
+    if (bashInstance) {
+      await saveFilesToDB(bashInstance, sessionId, db)
+      console.log(`Saved filesystem state to D1 for session ${sessionId}`)
+    }
+  }
+
+  return {
+    getBash: () => bashInstance,
+    initBash,
+    saveFiles,
+  }
+}
+
+export function createBashTool(context: ReturnType<typeof createFilesystemContext>): AgentTool<typeof bashSchema> {
   return {
     label: 'Bash',
     name: 'bash',
@@ -142,23 +174,14 @@ export function createBashTool(options: BashToolOptions): AgentTool<typeof bashS
       }
 
       // Initialize bash instance on first use
-      if (!bashInstance) {
-        // Ensure process shim is available for just-bash
-        ensureProcessShim()
-
-        // Load files from D1
-        const initialFiles = await loadFilesFromDB(sessionId, db)
-        bashInstance = new Bash({ cwd: '/tmp', files: initialFiles })
-        console.log(`Loaded ${Object.keys(initialFiles).length} files from D1 for session ${sessionId}`)
-      }
+      const bashInstance = await context.initBash()
 
       try {
         // Execute the command
         const result = await bashInstance.exec(args.command)
 
         // Save files to D1 after execution
-        await saveFilesToDB(bashInstance, sessionId, db)
-        console.log(`Saved filesystem state to D1 for session ${sessionId}`)
+        await context.saveFiles()
 
         // Combine stdout and stderr
         const output = [result.stdout, result.stderr]
