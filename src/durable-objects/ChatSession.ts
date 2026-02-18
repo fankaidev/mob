@@ -5,6 +5,7 @@
  * - Provides strong consistency for real-time chat
  * - Uses D1 for persistent storage
  * - Manages conversation history and streaming responses
+ * - Supports git repository mounting for code browsing
  */
 
 import type { DurableObjectState } from '@cloudflare/workers-types'
@@ -13,6 +14,9 @@ import type { AgentMessage } from '../lib/pi-agent/types'
 import type { Model } from '../lib/pi-ai/types'
 import { createFilesystemContext, createBashTool } from '../lib/tools/bash'
 import { createReadTool, createWriteTool, createEditTool, createListTool } from '../lib/tools/file-tools'
+import { createMountTool, createUnmountTool, createListMountsTool } from '../lib/tools/mount-tools'
+import { D1FileSystem, MountableFs } from '../lib/fs'
+import { restoreMounts } from '../lib/fs/mount-store'
 
 interface Env {
   DB: D1Database
@@ -24,6 +28,7 @@ export class ChatSession {
   private sessionId: string
   private messages: AgentMessage[] = []
   private initialized = false
+  private mountableFs: MountableFs | null = null
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state
@@ -58,6 +63,21 @@ export class ChatSession {
 
       this.messages = result.results.map((row: any) => JSON.parse(row.content))
     }
+
+    // Initialize MountableFs with D1FileSystem base for persistent storage
+    const baseFs = new D1FileSystem(this.env.DB, this.sessionId)
+    await baseFs.initializeDefaultDirectories()
+    this.mountableFs = new MountableFs({ base: baseFs })
+
+    // Create /mnt directory for git mounts
+    try {
+      await this.mountableFs.mkdir('/mnt', { recursive: true })
+    } catch {
+      // Ignore if already exists
+    }
+
+    // Restore persisted mounts
+    await restoreMounts(this.env.DB, this.sessionId, this.mountableFs)
 
     this.initialized = true
   }
@@ -207,10 +227,11 @@ export class ChatSession {
       const modelConfig = this.buildModel(baseUrl, model, provider)
       console.log('Model:', modelConfig)
 
-      // Create shared filesystem context for all file tools
+      // Create shared filesystem context for all tools
       const fsContext = createFilesystemContext({
         sessionId: this.sessionId,
-        db: this.env.DB
+        db: this.env.DB,
+        fs: this.mountableFs!,
       })
 
       // Create file operation tools
@@ -220,13 +241,23 @@ export class ChatSession {
       const editTool = createEditTool(fsContext.getBash, fsContext.saveFiles)
       const listTool = createListTool(fsContext.getBash)
 
+      // Create mount tools with shared MountableFs
+      const mountToolOptions = {
+        sessionId: this.sessionId,
+        db: this.env.DB,
+        mountableFs: this.mountableFs!,
+      }
+      const mountTool = createMountTool(mountToolOptions)
+      const unmountTool = createUnmountTool(mountToolOptions)
+      const listMountsTool = createListMountsTool(mountToolOptions)
+
       const agent = new Agent({
         initialState: {
           model: modelConfig,
           systemPrompt: `You are a helpful AI assistant built with Hono and Cloudflare Workers.
 Be concise and friendly. Format your responses using markdown when appropriate.
 
-You have access to the following tools for working with files:
+You have access to the following tools:
 
 **File Operations:**
 - read: Read the contents of a file
@@ -237,8 +268,13 @@ You have access to the following tools for working with files:
 **Bash Commands:**
 - bash: Execute shell commands (ls, cat, grep, sed, awk, find, etc.)
 
-All file operations persist to the database and are available across conversations in the same session.
-The filesystem starts at /tmp as the working directory.
+**Git Repository Mounting:**
+- mount: Clone and mount a git repository to browse its files
+- unmount: Remove a mounted repository
+- list_mounts: List all currently mounted repositories
+
+All file operations work with the shared filesystem. The filesystem starts at /tmp as the working directory.
+Use 'ls /mnt' or list with path="/mnt" to see mounted repositories.
 
 **When to use each tool:**
 - Use \`read\` to view file contents
@@ -246,14 +282,14 @@ The filesystem starts at /tmp as the working directory.
 - Use \`edit\` to make specific changes to existing files
 - Use \`list\` to see what files exist
 - Use \`bash\` for complex operations, piping, or text processing
+- Use \`mount\` to clone a git repository for browsing
 
-Examples:
-- Create file: write with path="/tmp/data.txt" and content="Hello World"
-- View file: read with path="/tmp/data.txt"
-- Edit file: edit with path="/tmp/data.txt", oldText="Hello", newText="Hi"
-- List files: list with path="/tmp"
-- Process data: bash with command="cat data.txt | sort | uniq"`,
-          tools: [readTool, writeTool, editTool, listTool, bashTool],
+**Workflow example for browsing a git repository:**
+1. Mount the repo: mount({ url: "https://github.com/facebook/react.git", mount_path: "/mnt/react" })
+2. List files: list({ path: "/mnt/react" }) or bash({ command: "ls /mnt/react" })
+3. Read a file: read({ path: "/mnt/react/README.md" })
+4. Search code: bash({ command: "grep -r 'useState' /mnt/react/packages --include='*.js'" })`,
+          tools: [readTool, writeTool, editTool, listTool, bashTool, mountTool, unmountTool, listMountsTool],
           messages: this.messages,
         },
         getApiKey: async () => apiKey,

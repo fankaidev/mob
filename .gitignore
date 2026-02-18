@@ -4,6 +4,7 @@ node_modules/
 # Build output
 dist/
 .wrangler/
+public/static/client.js
 
 # TypeScript compiled files (should not exist in src/)
 src/**/*.js
