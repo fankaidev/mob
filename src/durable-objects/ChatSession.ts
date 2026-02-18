@@ -15,8 +15,7 @@ import type { Model } from '../lib/pi-ai/types'
 import { createFilesystemContext, createBashTool } from '../lib/tools/bash'
 import { createReadTool, createWriteTool, createEditTool, createListTool } from '../lib/tools/file-tools'
 import { createMountTool, createUnmountTool, createListMountsTool } from '../lib/tools/mount-tools'
-import { MountableFs } from 'just-bash'
-import { D1FileSystem } from '../lib/fs'
+import { D1FileSystem, MountableFs } from '../lib/fs'
 import { restoreMounts } from '../lib/fs/mount-store'
 
 interface Env {
