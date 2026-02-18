@@ -6,6 +6,12 @@
  * into the given MountableFs so the agent can browse them immediately.
  */
 
+// Polyfill Buffer for isomorphic-git in Workers environment
+import { Buffer } from 'buffer'
+if (typeof globalThis.Buffer === 'undefined') {
+  ;(globalThis as any).Buffer = Buffer
+}
+
 import git from 'isomorphic-git'
 import http from 'isomorphic-git/http/web'
 import { MountableFs } from './index'
