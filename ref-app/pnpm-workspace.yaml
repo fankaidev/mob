@@ -1,6 +1,0 @@
-packages:
-  - frontend
-  - backend
-  - bdd-test
-  - txom-frontend-libs
-
