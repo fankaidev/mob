@@ -5,6 +5,7 @@
  * - Provides strong consistency for real-time chat
  * - Uses D1 for persistent storage
  * - Manages conversation history and streaming responses
+ * - Supports git repository mounting for code browsing
  */
 
 import type { DurableObjectState } from '@cloudflare/workers-types'
@@ -12,6 +13,9 @@ import { Agent } from '../lib/pi-agent'
 import type { AgentMessage } from '../lib/pi-agent/types'
 import type { Model } from '../lib/pi-ai/types'
 import { createBashTool } from '../lib/tools/bash'
+import { createMountTool, createUnmountTool, createListMountsTool } from '../lib/tools/mount-tools'
+import { InMemoryFs, MountableFs } from '../lib/fs'
+import { restoreMounts } from '../lib/fs/mount-store'
 
 interface Env {
   DB: D1Database
@@ -23,6 +27,7 @@ export class ChatSession {
   private sessionId: string
   private messages: AgentMessage[] = []
   private initialized = false
+  private mountableFs: MountableFs | null = null
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state
@@ -57,6 +62,20 @@ export class ChatSession {
 
       this.messages = result.results.map((row: any) => JSON.parse(row.content))
     }
+
+    // Initialize MountableFs with InMemoryFs base
+    const baseFs = new InMemoryFs()
+    this.mountableFs = new MountableFs({ base: baseFs })
+
+    // Create /mnt directory for mounts
+    try {
+      await this.mountableFs.mkdir('/mnt', { recursive: true })
+    } catch {
+      // Ignore if already exists
+    }
+
+    // Restore persisted mounts
+    await restoreMounts(this.env.DB, this.sessionId, this.mountableFs)
 
     this.initialized = true
   }
@@ -206,11 +225,22 @@ export class ChatSession {
       const modelConfig = this.buildModel(baseUrl, model, provider)
       console.log('Model:', modelConfig)
 
-      // Create bash tool for command execution with D1 persistence
+      // Create tools with shared MountableFs
+      const toolOptions = {
+        sessionId: this.sessionId,
+        db: this.env.DB,
+        mountableFs: this.mountableFs!,
+      }
+
       const bashTool = createBashTool({
         sessionId: this.sessionId,
-        db: this.env.DB
+        db: this.env.DB,
+        fs: this.mountableFs!,
       })
+
+      const mountTool = createMountTool(toolOptions)
+      const unmountTool = createUnmountTool(toolOptions)
+      const listMountsTool = createListMountsTool(toolOptions)
 
       const agent = new Agent({
         initialState: {
@@ -218,24 +248,34 @@ export class ChatSession {
           systemPrompt: `You are a helpful AI assistant built with Hono and Cloudflare Workers.
 Be concise and friendly. Format your responses using markdown when appropriate.
 
-You have access to a bash tool that allows you to execute shell commands in an isolated environment.
-Use it when you need to:
-- Process or manipulate text data
-- Perform file operations (files are persisted across conversations)
-- Run calculations or data transformations
-- Execute any standard Unix commands
+You have access to several tools:
 
-Important notes:
-- Files you create are automatically saved to the database
-- Files persist across conversations in the same session
+## bash
+Execute shell commands in an isolated environment.
+- File operations: cat, ls, cp, mv, rm, mkdir, touch, head, tail, grep, sed, awk, find
+- Text processing: echo, printf, wc, sort, uniq, tr, cut
 - The filesystem starts at /tmp as the working directory
+- Use 'ls /mnt' to see mounted repositories
 
-Examples:
-- List files: bash with command "ls -la"
-- Create file: bash with command "echo 'Hello World' > hello.txt"
-- Search text: bash with command "grep 'pattern' file.txt"
-- Process data: bash with command "cat data.txt | sort | uniq"`,
-          tools: [bashTool],
+## mount
+Clone and mount a git repository to browse its files.
+- Example: mount({ url: "https://github.com/owner/repo.git", mount_path: "/mnt/repo" })
+- After mounting, browse files with: bash({ command: "ls /mnt/repo" })
+- Supports private repos with token parameter
+
+## unmount
+Remove a mounted repository.
+- Example: unmount({ mount_path: "/mnt/repo" })
+
+## list_mounts
+List all currently mounted repositories.
+
+Workflow example for browsing a git repository:
+1. Mount the repo: mount({ url: "https://github.com/facebook/react.git", mount_path: "/mnt/react" })
+2. List files: bash({ command: "ls /mnt/react" })
+3. Read a file: bash({ command: "cat /mnt/react/README.md" })
+4. Search code: bash({ command: "grep -r 'useState' /mnt/react/packages --include='*.js'" })`,
+          tools: [bashTool, mountTool, unmountTool, listMountsTool],
           messages: this.messages,
         },
         getApiKey: async () => apiKey,

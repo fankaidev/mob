@@ -35,3 +35,19 @@ CREATE TABLE IF NOT EXISTS files (
 
 -- Index for efficient file queries
 CREATE INDEX IF NOT EXISTS idx_files_session_id ON files(session_id);
+
+-- Mounts table - stores git repository mounts per session
+CREATE TABLE IF NOT EXISTS mounts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL,
+  mount_path TEXT NOT NULL,
+  type TEXT NOT NULL DEFAULT 'git',
+  config TEXT NOT NULL,  -- JSON: { url, ref?, depth?, token? }
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  UNIQUE(session_id, mount_path),
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+);
+
+-- Index for efficient mount queries
+CREATE INDEX IF NOT EXISTS idx_mounts_session_id ON mounts(session_id);

@@ -1,6 +1,7 @@
 import { Type, type Static } from '@sinclair/typebox'
 import type { AgentTool } from '../pi-agent/types'
-import { Bash } from 'just-bash'
+import { Bash } from '../just-bash/src/Bash'
+import type { IFileSystem } from '../fs'
 
 // ============================================================================
 // Process shim for just-bash (Workers don't have full process object)
@@ -44,91 +45,17 @@ Examples:
 - Search: grep "error" log.txt
 - Pipe commands: cat data.txt | wc -l
 
-Note: Files are persisted to D1 database after each command execution.`
+Note: The filesystem is shared with mounted repositories. Use 'ls /mnt' to see mounted repos.`
 
 interface BashToolOptions {
   sessionId: string
   db: D1Database
-}
-
-/**
- * Recursively collect all files from the filesystem
- */
-async function collectFiles(bash: Bash, dirPath: string = '/'): Promise<Record<string, string>> {
-  const files: Record<string, string> = {}
-
-  try {
-    const entries = await bash.fs.readdir(dirPath)
-
-    for (const entry of entries) {
-      if (entry === '.' || entry === '..') continue
-
-      const fullPath = dirPath === '/' ? `/${entry}` : `${dirPath}/${entry}`
-
-      try {
-        const stat = await bash.fs.stat(fullPath)
-
-        if (stat.isFile) {
-          // Read file content
-          const content = await bash.readFile(fullPath)
-          files[fullPath] = content
-        } else if (stat.isDirectory) {
-          // Recursively collect files from subdirectory
-          const subFiles = await collectFiles(bash, fullPath)
-          Object.assign(files, subFiles)
-        }
-      } catch (err) {
-        console.error(`Error processing ${fullPath}:`, err)
-      }
-    }
-  } catch (err) {
-    console.error(`Error reading directory ${dirPath}:`, err)
-  }
-
-  return files
-}
-
-/**
- * Save all files from bash filesystem to D1
- */
-async function saveFilesToDB(bash: Bash, sessionId: string, db: D1Database) {
-  const files = await collectFiles(bash)
-  const now = Date.now()
-
-  // Delete old files for this session
-  await db.prepare('DELETE FROM files WHERE session_id = ?').bind(sessionId).run()
-
-  // Insert all current files
-  const statements = Object.entries(files).map(([path, content]) =>
-    db.prepare(
-      'INSERT INTO files (session_id, path, content, updated_at) VALUES (?, ?, ?, ?)'
-    ).bind(sessionId, path, content, now)
-  )
-
-  if (statements.length > 0) {
-    await db.batch(statements)
-  }
-}
-
-/**
- * Load files from D1 for bash initialization
- */
-async function loadFilesFromDB(sessionId: string, db: D1Database): Promise<Record<string, string>> {
-  const result = await db.prepare(
-    'SELECT path, content FROM files WHERE session_id = ?'
-  ).bind(sessionId).all()
-
-  const files: Record<string, string> = {}
-  for (const row of result.results as any[]) {
-    files[row.path] = row.content
-  }
-
-  return files
+  fs: IFileSystem
 }
 
 export function createBashTool(options: BashToolOptions): AgentTool<typeof bashSchema> {
   let bashInstance: Bash | null = null
-  const { sessionId, db } = options
+  const { fs } = options
 
   return {
     label: 'Bash',
@@ -146,26 +73,24 @@ export function createBashTool(options: BashToolOptions): AgentTool<typeof bashS
         // Ensure process shim is available for just-bash
         ensureProcessShim()
 
-        // Load files from D1
-        const initialFiles = await loadFilesFromDB(sessionId, db)
-        bashInstance = new Bash({ cwd: '/tmp', files: initialFiles })
-        console.log(`Loaded ${Object.keys(initialFiles).length} files from D1 for session ${sessionId}`)
+        // Create bash with external filesystem
+        bashInstance = new Bash({
+          cwd: '/tmp',
+          fs: fs,
+        })
+        console.log(`Created bash instance with external filesystem`)
       }
 
       try {
         // Execute the command
         const result = await bashInstance.exec(args.command)
 
-        // Save files to D1 after execution
-        await saveFilesToDB(bashInstance, sessionId, db)
-        console.log(`Saved filesystem state to D1 for session ${sessionId}`)
-
         // Combine stdout and stderr
         const output = [result.stdout, result.stderr]
           .filter(Boolean)
           .join('\n')
 
-        // If command failed, throw error with output
+        // If command failed, return error with output
         if (result.exitCode !== 0) {
           return {
             content: [
