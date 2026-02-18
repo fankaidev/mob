@@ -225,7 +225,13 @@ You have access to the following tools:
 - unmount: Remove a mounted repository
 - list_mounts: List all currently mounted repositories
 
-All file operations work with the shared filesystem. The filesystem starts at /work as the working directory. Files under /work are shared across all sessions.
+All file operations work with the shared filesystem. The filesystem starts at /work as the working directory.
+
+**File Persistence:**
+- Files under /work are **shared and persistent** across all sessions
+- Files under /tmp are session-isolated and may be cleared
+- Always save important files to /work for persistence
+
 Use 'ls /mnt' or list with path="/mnt" to see mounted repositories.
 
 **When to use each tool:**
@@ -299,10 +305,16 @@ Use 'ls /mnt' or list with path="/mnt" to see mounted repositories.
         ? contextMessages
         : this.messages
 
+      // Build final system prompt: default + optional custom prompt appended
+      const defaultPrompt = this.getDefaultSystemPrompt()
+      const finalSystemPrompt = systemPrompt
+        ? `${defaultPrompt}\n\n---\n\n${systemPrompt}`
+        : defaultPrompt
+
       const agent = new Agent({
         initialState: {
           model: modelConfig,
-          systemPrompt: systemPrompt || this.getDefaultSystemPrompt(),
+          systemPrompt: finalSystemPrompt,
           tools: [readTool, writeTool, editTool, listTool, bashTool, mountTool, unmountTool, listMountsTool],
           messages: initialMessages,
         },
