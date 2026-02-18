@@ -225,7 +225,7 @@ You have access to the following tools:
 - unmount: Remove a mounted repository
 - list_mounts: List all currently mounted repositories
 
-All file operations work with the shared filesystem. The filesystem starts at /tmp as the working directory.
+All file operations work with the shared filesystem. The filesystem starts at /work as the working directory. Files under /work are shared across all sessions.
 Use 'ls /mnt' or list with path="/mnt" to see mounted repositories.
 
 **When to use each tool:**

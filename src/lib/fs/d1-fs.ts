@@ -28,6 +28,11 @@ interface FileRow {
   mtime: number
 }
 
+// Special session ID for shared files under /work
+const SHARED_SESSION_ID = '__shared__'
+// Paths that are shared across all sessions
+const SHARED_PATH_PREFIX = '/work'
+
 export class D1FileSystem implements IFileSystem {
   private db: D1Database
   private sessionId: string
@@ -35,6 +40,18 @@ export class D1FileSystem implements IFileSystem {
   constructor(db: D1Database, sessionId: string) {
     this.db = db
     this.sessionId = sessionId
+  }
+
+  /**
+   * Get the effective session ID for a path.
+   * Paths under /home use the shared session ID.
+   */
+  private getEffectiveSessionId(path: string): string {
+    const normalized = this.normalizePath(path)
+    if (normalized === SHARED_PATH_PREFIX || normalized.startsWith(`${SHARED_PATH_PREFIX}/`)) {
+      return SHARED_SESSION_ID
+    }
+    return this.sessionId
   }
 
   // ============================================================================
@@ -73,9 +90,10 @@ export class D1FileSystem implements IFileSystem {
 
   private async getEntry(path: string): Promise<FileRow | null> {
     const normalized = this.normalizePath(path)
+    const effectiveSessionId = this.getEffectiveSessionId(normalized)
     const result = await this.db.prepare(
       'SELECT * FROM files WHERE session_id = ? AND path = ?'
-    ).bind(this.sessionId, normalized).first()
+    ).bind(effectiveSessionId, normalized).first()
     return result as FileRow | null
   }
 
@@ -87,26 +105,29 @@ export class D1FileSystem implements IFileSystem {
     mode: number
   ): Promise<void> {
     const normalized = this.normalizePath(path)
+    const effectiveSessionId = this.getEffectiveSessionId(normalized)
     const now = Date.now()
     await this.db.prepare(
       `INSERT OR REPLACE INTO files (session_id, path, type, content, target, mode, mtime)
        VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).bind(this.sessionId, normalized, type, content, target, mode, now).run()
+    ).bind(effectiveSessionId, normalized, type, content, target, mode, now).run()
   }
 
   private async deleteEntry(path: string): Promise<void> {
     const normalized = this.normalizePath(path)
+    const effectiveSessionId = this.getEffectiveSessionId(normalized)
     await this.db.prepare(
       'DELETE FROM files WHERE session_id = ? AND path = ?'
-    ).bind(this.sessionId, normalized).run()
+    ).bind(effectiveSessionId, normalized).run()
   }
 
   private async deleteEntriesWithPrefix(prefix: string): Promise<void> {
     const normalized = this.normalizePath(prefix)
+    const effectiveSessionId = this.getEffectiveSessionId(normalized)
     const pattern = normalized === '/' ? '/%' : `${normalized}/%`
     await this.db.prepare(
       'DELETE FROM files WHERE session_id = ? AND (path = ? OR path LIKE ?)'
-    ).bind(this.sessionId, normalized, pattern).run()
+    ).bind(effectiveSessionId, normalized, pattern).run()
   }
 
   // ============================================================================
@@ -269,10 +290,11 @@ export class D1FileSystem implements IFileSystem {
 
     // Find direct children
     const prefix = normalized === '/' ? '/' : normalized + '/'
+    const effectiveSessionId = this.getEffectiveSessionId(normalized)
     const result = await this.db.prepare(
       'SELECT path FROM files WHERE session_id = ? AND path LIKE ? AND path NOT LIKE ?'
     ).bind(
-      this.sessionId,
+      effectiveSessionId,
       prefix + '%',
       prefix + '%/%'  // Exclude nested paths
     ).all()
@@ -330,9 +352,10 @@ export class D1FileSystem implements IFileSystem {
 
       // Copy all children
       const prefix = srcNorm === '/' ? '/' : srcNorm + '/'
+      const srcEffectiveSessionId = this.getEffectiveSessionId(srcNorm)
       const result = await this.db.prepare(
         'SELECT * FROM files WHERE session_id = ? AND path LIKE ?'
-      ).bind(this.sessionId, prefix + '%').all()
+      ).bind(srcEffectiveSessionId, prefix + '%').all()
 
       for (const row of result.results as unknown as FileRow[]) {
         const relativePath = row.path.slice(srcNorm.length)
@@ -415,9 +438,11 @@ export class D1FileSystem implements IFileSystem {
     const entry = await this.getEntry(path)
     if (!entry) this.enoent('utimes', path)
 
+    const normalized = this.normalizePath(path)
+    const effectiveSessionId = this.getEffectiveSessionId(normalized)
     await this.db.prepare(
       'UPDATE files SET mtime = ? WHERE session_id = ? AND path = ?'
-    ).bind(mtime.getTime(), this.sessionId, this.normalizePath(path)).run()
+    ).bind(mtime.getTime(), effectiveSessionId, normalized).run()
   }
 
   // ============================================================================
@@ -425,7 +450,7 @@ export class D1FileSystem implements IFileSystem {
   // ============================================================================
 
   async initializeDefaultDirectories(): Promise<void> {
-    const dirs = ['/tmp', '/home', '/home/user']
+    const dirs = ['/tmp', '/work']
     for (const dir of dirs) {
       const exists = await this.exists(dir)
       if (!exists) {

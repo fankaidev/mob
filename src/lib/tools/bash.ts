@@ -68,7 +68,7 @@ export function createFilesystemContext(options: BashToolOptions) {
 
       // Create bash with external filesystem (MountableFs)
       bashInstance = new Bash({
-        cwd: '/tmp',
+        cwd: '/work',
         fs: fs,
       })
       console.log(`Created bash instance with external filesystem`)
