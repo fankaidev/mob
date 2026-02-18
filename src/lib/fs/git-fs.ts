@@ -8,7 +8,7 @@
  * One Map, two interfaces, no adapter layer.
  */
 
-import type { IFileSystem, MkdirOptions, RmOptions, ReadFileOptions, WriteFileOptions, BufferEncoding } from '../just-bash/src/fs/interface'
+import type { IFileSystem, MkdirOptions, RmOptions, ReadFileOptions, WriteFileOptions, BufferEncoding } from 'just-bash'
 
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()

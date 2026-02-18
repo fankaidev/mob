@@ -20,6 +20,7 @@
     "file-type": "^21.3.0",
     "hono": "^4.11.1",
     "ini": "^6.0.0",
+    "just-bash": "^2.10.2",
     "isomorphic-git": "^1.27.1",
     "minimatch": "^10.1.2",
     "papaparse": "^5.5.3",

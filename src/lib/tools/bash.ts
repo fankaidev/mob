@@ -1,6 +1,6 @@
 import { Type, type Static } from '@sinclair/typebox'
 import type { AgentTool } from '../pi-agent/types'
-import { Bash } from '../just-bash/src/Bash'
+import { Bash } from 'just-bash'
 import type { IFileSystem } from '../fs'
 
 // ============================================================================

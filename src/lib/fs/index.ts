@@ -3,7 +3,7 @@
  * Re-exports from just-bash fs module and adds git-fs support.
  */
 
-// Re-export core filesystem interfaces and implementations
+// Re-export core filesystem interfaces and implementations from just-bash npm package
 export type {
   IFileSystem,
   FsStat,
@@ -21,8 +21,7 @@ export type {
   CpOptions,
   InitialFiles,
   FileInit,
-} from '../just-bash/src/fs/interface'
+} from 'just-bash'
 
-export { InMemoryFs } from '../just-bash/src/fs/in-memory-fs/in-memory-fs'
-export { MountableFs, type MountConfig, type MountableFsOptions } from '../just-bash/src/fs/mountable-fs/mountable-fs'
+export { InMemoryFs, MountableFs, type MountConfig, type MountableFsOptions } from 'just-bash'
 export { createGitFs } from './git-fs'

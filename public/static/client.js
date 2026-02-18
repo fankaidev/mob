@@ -1,8 +1,8 @@
 function getDefaultExportFromCjs(x) {
   return x && x.__esModule && Object.prototype.hasOwnProperty.call(x, "default") ? x["default"] : x;
 }
-var jsxRuntime = { exports: {} };
-var reactJsxRuntime_development = {};
+var jsxDevRuntime = { exports: {} };
+var reactJsxDevRuntime_development = {};
 var react = { exports: {} };
 var react_development = { exports: {} };
 react_development.exports;
@@ -997,13 +997,13 @@ function requireReact() {
   }
   return react.exports;
 }
-var hasRequiredReactJsxRuntime_development;
-function requireReactJsxRuntime_development() {
-  if (hasRequiredReactJsxRuntime_development) return reactJsxRuntime_development;
-  hasRequiredReactJsxRuntime_development = 1;
+var hasRequiredReactJsxDevRuntime_development;
+function requireReactJsxDevRuntime_development() {
+  if (hasRequiredReactJsxDevRuntime_development) return reactJsxDevRuntime_development;
+  hasRequiredReactJsxDevRuntime_development = 1;
   /**
    * @license React
-   * react-jsx-runtime.development.js
+   * react-jsx-dev-runtime.development.js
    *
    * Copyright (c) Meta Platforms, Inc. and affiliates.
    *
@@ -1236,42 +1236,31 @@ function requireReactJsxRuntime_development() {
     )();
     var unknownOwnerDebugTask = createTask(getTaskName(UnknownOwner));
     var didWarnAboutKeySpread = {};
-    reactJsxRuntime_development.Fragment = REACT_FRAGMENT_TYPE;
-    reactJsxRuntime_development.jsx = function(type, config, maybeKey) {
+    reactJsxDevRuntime_development.Fragment = REACT_FRAGMENT_TYPE;
+    reactJsxDevRuntime_development.jsxDEV = function(type, config, maybeKey, isStaticChildren) {
       var trackActualOwner = 1e4 > ReactSharedInternals.recentlyCreatedOwnerStacks++;
       return jsxDEVImpl(
         type,
         config,
         maybeKey,
-        false,
-        trackActualOwner ? Error("react-stack-top-frame") : unknownOwnerDebugStack,
-        trackActualOwner ? createTask(getTaskName(type)) : unknownOwnerDebugTask
-      );
-    };
-    reactJsxRuntime_development.jsxs = function(type, config, maybeKey) {
-      var trackActualOwner = 1e4 > ReactSharedInternals.recentlyCreatedOwnerStacks++;
-      return jsxDEVImpl(
-        type,
-        config,
-        maybeKey,
-        true,
+        isStaticChildren,
         trackActualOwner ? Error("react-stack-top-frame") : unknownOwnerDebugStack,
         trackActualOwner ? createTask(getTaskName(type)) : unknownOwnerDebugTask
       );
     };
   })();
-  return reactJsxRuntime_development;
+  return reactJsxDevRuntime_development;
 }
-var hasRequiredJsxRuntime;
-function requireJsxRuntime() {
-  if (hasRequiredJsxRuntime) return jsxRuntime.exports;
-  hasRequiredJsxRuntime = 1;
+var hasRequiredJsxDevRuntime;
+function requireJsxDevRuntime() {
+  if (hasRequiredJsxDevRuntime) return jsxDevRuntime.exports;
+  hasRequiredJsxDevRuntime = 1;
   {
-    jsxRuntime.exports = requireReactJsxRuntime_development();
+    jsxDevRuntime.exports = requireReactJsxDevRuntime_development();
   }
-  return jsxRuntime.exports;
+  return jsxDevRuntime.exports;
 }
-var jsxRuntimeExports = requireJsxRuntime();
+var jsxDevRuntimeExports = requireJsxDevRuntime();
 var client = { exports: {} };
 var reactDomClient_development = {};
 var scheduler = { exports: {} };
@@ -21706,7 +21695,15 @@ function ChatMessage({ role, content }) {
     const textStr = typeof text === "string" ? text : String(text || "");
     return textStr.replace(/```([\s\S]*?)```/g, "<pre><code>$1</code></pre>").replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\n/g, "<br>");
   };
-  return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: `message ${role}`, children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { dangerouslySetInnerHTML: { __html: formatContent(content) } }) });
+  return /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("div", { className: `message ${role}`, children: /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("div", { dangerouslySetInnerHTML: { __html: formatContent(content) } }, void 0, false, {
+    fileName: "/home/wukong/dev/mob/src/client/components/ChatMessage.tsx",
+    lineNumber: 20,
+    columnNumber: 7
+  }, this) }, void 0, false, {
+    fileName: "/home/wukong/dev/mob/src/client/components/ChatMessage.tsx",
+    lineNumber: 19,
+    columnNumber: 5
+  }, this);
 }
 function SettingsModal({ isOpen, onClose, onSave, initialBaseUrl, initialApiKey, initialModel, initialProvider }) {
   const [baseUrl, setBaseUrl] = reactExports.useState(initialBaseUrl);
@@ -21745,15 +21742,35 @@ function SettingsModal({ isOpen, onClose, onSave, initialBaseUrl, initialApiKey,
     }, 1e3);
   };
   if (!isOpen) return null;
-  return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "modal show", onClick: onClose, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "modal-content", onClick: (e) => e.stopPropagation(), children: [
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "modal-header", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { children: "Settings" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "close-btn", onClick: onClose, children: "×" })
-    ] }),
-    status && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: `settings-status ${status.type}`, children: status.message }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "form-group", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("label", { htmlFor: "api-base-url", children: "API Base URL" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx(
+  return /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("div", { className: "modal show", onClick: onClose, children: /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("div", { className: "modal-content", onClick: (e) => e.stopPropagation(), children: [
+    /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("div", { className: "modal-header", children: [
+      /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("h2", { children: "Settings" }, void 0, false, {
+        fileName: "/home/wukong/dev/mob/src/client/components/SettingsModal.tsx",
+        lineNumber: 61,
+        columnNumber: 11
+      }, this),
+      /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("button", { className: "close-btn", onClick: onClose, children: "×" }, void 0, false, {
+        fileName: "/home/wukong/dev/mob/src/client/components/SettingsModal.tsx",
+        lineNumber: 62,
+        columnNumber: 11
+      }, this)
+    ] }, void 0, true, {
+      fileName: "/home/wukong/dev/mob/src/client/components/SettingsModal.tsx",
+      lineNumber: 60,
+      columnNumber: 9
+    }, this),
+    status && /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("div", { className: `settings-status ${status.type}`, children: status.message }, void 0, false, {
+      fileName: "/home/wukong/dev/mob/src/client/components/SettingsModal.tsx",
+      lineNumber: 66,
+      columnNumber: 11
+    }, this),
+    /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("div", { className: "form-group", children: [
+      /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("label", { htmlFor: "api-base-url", children: "API Base URL" }, void 0, false, {
+        fileName: "/home/wukong/dev/mob/src/client/components/SettingsModal.tsx",
+        lineNumber: 72,
+        columnNumber: 11
+      }, this),
+      /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV(
         "input",
         {
           type: "text",
@@ -21761,13 +21778,33 @@ function SettingsModal({ isOpen, onClose, onSave, initialBaseUrl, initialApiKey,
           placeholder: "https://api.anthropic.com",
           value: baseUrl,
           onChange: (e) => setBaseUrl(e.target.value)
-        }
+        },
+        void 0,
+        false,
+        {
+          fileName: "/home/wukong/dev/mob/src/client/components/SettingsModal.tsx",
+          lineNumber: 73,
+          columnNumber: 11
+        },
+        this
       ),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("small", { children: "Anthropic API endpoint" })
-    ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "form-group", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("label", { htmlFor: "api-key", children: "API Key" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx(
+      /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("small", { children: "Anthropic API endpoint" }, void 0, false, {
+        fileName: "/home/wukong/dev/mob/src/client/components/SettingsModal.tsx",
+        lineNumber: 80,
+        columnNumber: 11
+      }, this)
+    ] }, void 0, true, {
+      fileName: "/home/wukong/dev/mob/src/client/components/SettingsModal.tsx",
+      lineNumber: 71,
+      columnNumber: 9
+    }, this),
+    /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("div", { className: "form-group", children: [
+      /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("label", { htmlFor: "api-key", children: "API Key" }, void 0, false, {
+        fileName: "/home/wukong/dev/mob/src/client/components/SettingsModal.tsx",
+        lineNumber: 84,
+        columnNumber: 11
+      }, this),
+      /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV(
         "input",
         {
           type: "password",
@@ -21775,13 +21812,33 @@ function SettingsModal({ isOpen, onClose, onSave, initialBaseUrl, initialApiKey,
           placeholder: "sk-ant-api03-...",
           value: apiKey,
           onChange: (e) => setApiKey(e.target.value)
-        }
+        },
+        void 0,
+        false,
+        {
+          fileName: "/home/wukong/dev/mob/src/client/components/SettingsModal.tsx",
+          lineNumber: 85,
+          columnNumber: 11
+        },
+        this
       ),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("small", { children: "Your Anthropic API key" })
-    ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "form-group", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("label", { htmlFor: "api-model", children: "Model" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx(
+      /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("small", { children: "Your Anthropic API key" }, void 0, false, {
+        fileName: "/home/wukong/dev/mob/src/client/components/SettingsModal.tsx",
+        lineNumber: 92,
+        columnNumber: 11
+      }, this)
+    ] }, void 0, true, {
+      fileName: "/home/wukong/dev/mob/src/client/components/SettingsModal.tsx",
+      lineNumber: 83,
+      columnNumber: 9
+    }, this),
+    /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("div", { className: "form-group", children: [
+      /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("label", { htmlFor: "api-model", children: "Model" }, void 0, false, {
+        fileName: "/home/wukong/dev/mob/src/client/components/SettingsModal.tsx",
+        lineNumber: 96,
+        columnNumber: 11
+      }, this),
+      /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV(
         "input",
         {
           type: "text",
@@ -21789,30 +21846,94 @@ function SettingsModal({ isOpen, onClose, onSave, initialBaseUrl, initialApiKey,
           placeholder: "claude-sonnet-4-5-20250929-id",
           value: model,
           onChange: (e) => setModel(e.target.value)
-        }
+        },
+        void 0,
+        false,
+        {
+          fileName: "/home/wukong/dev/mob/src/client/components/SettingsModal.tsx",
+          lineNumber: 97,
+          columnNumber: 11
+        },
+        this
       ),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("small", { children: "Model name (e.g. claude-sonnet-4-5-20250929-id)" })
-    ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "form-group", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("label", { htmlFor: "api-provider", children: "Provider" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs(
+      /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("small", { children: "Model name (e.g. claude-sonnet-4-5-20250929-id)" }, void 0, false, {
+        fileName: "/home/wukong/dev/mob/src/client/components/SettingsModal.tsx",
+        lineNumber: 104,
+        columnNumber: 11
+      }, this)
+    ] }, void 0, true, {
+      fileName: "/home/wukong/dev/mob/src/client/components/SettingsModal.tsx",
+      lineNumber: 95,
+      columnNumber: 9
+    }, this),
+    /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("div", { className: "form-group", children: [
+      /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("label", { htmlFor: "api-provider", children: "Provider" }, void 0, false, {
+        fileName: "/home/wukong/dev/mob/src/client/components/SettingsModal.tsx",
+        lineNumber: 108,
+        columnNumber: 11
+      }, this),
+      /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV(
         "select",
         {
           id: "api-provider",
           value: provider,
           onChange: (e) => setProvider(e.target.value),
           children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "", children: "Select a provider" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "anthropic", children: "Anthropic" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "openai", children: "OpenAI" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "openrouter", children: "OpenRouter" })
+            /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("option", { value: "", children: "Select a provider" }, void 0, false, {
+              fileName: "/home/wukong/dev/mob/src/client/components/SettingsModal.tsx",
+              lineNumber: 114,
+              columnNumber: 13
+            }, this),
+            /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("option", { value: "anthropic", children: "Anthropic" }, void 0, false, {
+              fileName: "/home/wukong/dev/mob/src/client/components/SettingsModal.tsx",
+              lineNumber: 115,
+              columnNumber: 13
+            }, this),
+            /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("option", { value: "openai", children: "OpenAI" }, void 0, false, {
+              fileName: "/home/wukong/dev/mob/src/client/components/SettingsModal.tsx",
+              lineNumber: 116,
+              columnNumber: 13
+            }, this),
+            /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("option", { value: "openrouter", children: "OpenRouter" }, void 0, false, {
+              fileName: "/home/wukong/dev/mob/src/client/components/SettingsModal.tsx",
+              lineNumber: 117,
+              columnNumber: 13
+            }, this)
           ]
-        }
+        },
+        void 0,
+        true,
+        {
+          fileName: "/home/wukong/dev/mob/src/client/components/SettingsModal.tsx",
+          lineNumber: 109,
+          columnNumber: 11
+        },
+        this
       ),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("small", { children: "AI provider" })
-    ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: handleSave, style: { width: "100%" }, children: "Save Settings" })
-  ] }) });
+      /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("small", { children: "AI provider" }, void 0, false, {
+        fileName: "/home/wukong/dev/mob/src/client/components/SettingsModal.tsx",
+        lineNumber: 119,
+        columnNumber: 11
+      }, this)
+    ] }, void 0, true, {
+      fileName: "/home/wukong/dev/mob/src/client/components/SettingsModal.tsx",
+      lineNumber: 107,
+      columnNumber: 9
+    }, this),
+    /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("button", { onClick: handleSave, style: { width: "100%" }, children: "Save Settings" }, void 0, false, {
+      fileName: "/home/wukong/dev/mob/src/client/components/SettingsModal.tsx",
+      lineNumber: 122,
+      columnNumber: 9
+    }, this)
+  ] }, void 0, true, {
+    fileName: "/home/wukong/dev/mob/src/client/components/SettingsModal.tsx",
+    lineNumber: 59,
+    columnNumber: 7
+  }, this) }, void 0, false, {
+    fileName: "/home/wukong/dev/mob/src/client/components/SettingsModal.tsx",
+    lineNumber: 58,
+    columnNumber: 5
+  }, this);
 }
 function App() {
   const [messages, setMessages] = reactExports.useState([]);
@@ -22053,54 +22174,145 @@ function App() {
       (_a = inputRef.current) == null ? void 0 : _a.focus();
     }
   };
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", height: "100vh" }, children: [
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: `sidebar ${isSidebarOpen ? "open" : ""}`, children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "sidebar-header", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { children: "Sessions" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "close-sidebar-btn", onClick: () => setIsSidebarOpen(false), children: "×" })
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "new-chat-btn", onClick: createNewSession, children: "+ New Chat" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "sessions-list", children: sessions.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { padding: "1rem", color: "rgba(255,255,255,0.6)", textAlign: "center" }, children: "No sessions yet" }) : sessions.map((session) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+  return /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("div", { style: { display: "flex", height: "100vh" }, children: [
+    /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("div", { className: `sidebar ${isSidebarOpen ? "open" : ""}`, children: [
+      /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("div", { className: "sidebar-header", children: [
+        /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("h3", { children: "Sessions" }, void 0, false, {
+          fileName: "/home/wukong/dev/mob/src/client/App.tsx",
+          lineNumber: 312,
+          columnNumber: 11
+        }, this),
+        /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("button", { className: "close-sidebar-btn", onClick: () => setIsSidebarOpen(false), children: "×" }, void 0, false, {
+          fileName: "/home/wukong/dev/mob/src/client/App.tsx",
+          lineNumber: 313,
+          columnNumber: 11
+        }, this)
+      ] }, void 0, true, {
+        fileName: "/home/wukong/dev/mob/src/client/App.tsx",
+        lineNumber: 311,
+        columnNumber: 9
+      }, this),
+      /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("button", { className: "new-chat-btn", onClick: createNewSession, children: "+ New Chat" }, void 0, false, {
+        fileName: "/home/wukong/dev/mob/src/client/App.tsx",
+        lineNumber: 315,
+        columnNumber: 9
+      }, this),
+      /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("div", { className: "sessions-list", children: sessions.length === 0 ? /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("div", { style: { padding: "1rem", color: "rgba(255,255,255,0.6)", textAlign: "center" }, children: "No sessions yet" }, void 0, false, {
+        fileName: "/home/wukong/dev/mob/src/client/App.tsx",
+        lineNumber: 320,
+        columnNumber: 13
+      }, this) : sessions.map((session) => /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV(
         "div",
         {
           className: `session-item ${session.id === sessionId ? "active" : ""}`,
           onClick: () => switchSession(session.id),
-          children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" }, children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1, minWidth: 0 }, children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "session-name", children: [
+          children: /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" }, children: [
+            /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("div", { style: { flex: 1, minWidth: 0 }, children: [
+              /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("div", { className: "session-name", children: [
                 session.id.slice(0, 8),
                 "..."
-              ] }),
-              /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "session-date", children: formatDateTime(session.updated_at) })
-            ] }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              ] }, void 0, true, {
+                fileName: "/home/wukong/dev/mob/src/client/App.tsx",
+                lineNumber: 332,
+                columnNumber: 21
+              }, this),
+              /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("div", { className: "session-date", children: formatDateTime(session.updated_at) }, void 0, false, {
+                fileName: "/home/wukong/dev/mob/src/client/App.tsx",
+                lineNumber: 335,
+                columnNumber: 21
+              }, this)
+            ] }, void 0, true, {
+              fileName: "/home/wukong/dev/mob/src/client/App.tsx",
+              lineNumber: 331,
+              columnNumber: 19
+            }, this),
+            /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV(
               "button",
               {
                 className: "delete-session-btn",
                 onClick: (e) => deleteSession(session.id, e),
                 title: "Delete session",
                 children: "🗑️"
-              }
+              },
+              void 0,
+              false,
+              {
+                fileName: "/home/wukong/dev/mob/src/client/App.tsx",
+                lineNumber: 339,
+                columnNumber: 19
+              },
+              this
             )
-          ] })
+          ] }, void 0, true, {
+            fileName: "/home/wukong/dev/mob/src/client/App.tsx",
+            lineNumber: 330,
+            columnNumber: 17
+          }, this)
         },
-        session.id
-      )) })
-    ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", flexDirection: "column", flex: 1 }, children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("header", { children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: "10px" }, children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "menu-btn", onClick: () => setIsSidebarOpen(!isSidebarOpen), children: "☰" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("h1", { children: "🤖 Mob Chat" })
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { className: "settings-btn", onClick: () => setIsSettingsOpen(true), children: "⚙️ Settings" })
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { id: "messages", children: [
-        messages.map((msg, idx) => /* @__PURE__ */ jsxRuntimeExports.jsx(ChatMessage, { role: msg.role, content: msg.content }, idx)),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { ref: messagesEndRef })
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("form", { id: "input-form", onSubmit: handleSubmit, children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx(
+        session.id,
+        false,
+        {
+          fileName: "/home/wukong/dev/mob/src/client/App.tsx",
+          lineNumber: 325,
+          columnNumber: 15
+        },
+        this
+      )) }, void 0, false, {
+        fileName: "/home/wukong/dev/mob/src/client/App.tsx",
+        lineNumber: 318,
+        columnNumber: 9
+      }, this)
+    ] }, void 0, true, {
+      fileName: "/home/wukong/dev/mob/src/client/App.tsx",
+      lineNumber: 310,
+      columnNumber: 7
+    }, this),
+    /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("div", { style: { display: "flex", flexDirection: "column", flex: 1 }, children: [
+      /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("header", { children: [
+        /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("div", { style: { display: "flex", alignItems: "center", gap: "10px" }, children: [
+          /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("button", { className: "menu-btn", onClick: () => setIsSidebarOpen(!isSidebarOpen), children: "☰" }, void 0, false, {
+            fileName: "/home/wukong/dev/mob/src/client/App.tsx",
+            lineNumber: 357,
+            columnNumber: 13
+          }, this),
+          /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("h1", { children: "🤖 Mob Chat" }, void 0, false, {
+            fileName: "/home/wukong/dev/mob/src/client/App.tsx",
+            lineNumber: 360,
+            columnNumber: 13
+          }, this)
+        ] }, void 0, true, {
+          fileName: "/home/wukong/dev/mob/src/client/App.tsx",
+          lineNumber: 356,
+          columnNumber: 11
+        }, this),
+        /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("button", { className: "settings-btn", onClick: () => setIsSettingsOpen(true), children: "⚙️ Settings" }, void 0, false, {
+          fileName: "/home/wukong/dev/mob/src/client/App.tsx",
+          lineNumber: 362,
+          columnNumber: 11
+        }, this)
+      ] }, void 0, true, {
+        fileName: "/home/wukong/dev/mob/src/client/App.tsx",
+        lineNumber: 355,
+        columnNumber: 9
+      }, this),
+      /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("div", { id: "messages", children: [
+        messages.map((msg, idx) => /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV(ChatMessage, { role: msg.role, content: msg.content }, idx, false, {
+          fileName: "/home/wukong/dev/mob/src/client/App.tsx",
+          lineNumber: 369,
+          columnNumber: 13
+        }, this)),
+        /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("div", { ref: messagesEndRef }, void 0, false, {
+          fileName: "/home/wukong/dev/mob/src/client/App.tsx",
+          lineNumber: 371,
+          columnNumber: 11
+        }, this)
+      ] }, void 0, true, {
+        fileName: "/home/wukong/dev/mob/src/client/App.tsx",
+        lineNumber: 367,
+        columnNumber: 9
+      }, this),
+      /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("form", { id: "input-form", onSubmit: handleSubmit, children: [
+        /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV(
           "input",
           {
             ref: inputRef,
@@ -22110,12 +22322,32 @@ function App() {
             value: inputValue,
             onChange: (e) => setInputValue(e.target.value),
             disabled: isLoading
-          }
+          },
+          void 0,
+          false,
+          {
+            fileName: "/home/wukong/dev/mob/src/client/App.tsx",
+            lineNumber: 375,
+            columnNumber: 11
+          },
+          this
         ),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "submit", disabled: isLoading, children: "Send" })
-      ] })
-    ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx(
+        /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV("button", { type: "submit", disabled: isLoading, children: "Send" }, void 0, false, {
+          fileName: "/home/wukong/dev/mob/src/client/App.tsx",
+          lineNumber: 384,
+          columnNumber: 11
+        }, this)
+      ] }, void 0, true, {
+        fileName: "/home/wukong/dev/mob/src/client/App.tsx",
+        lineNumber: 374,
+        columnNumber: 9
+      }, this)
+    ] }, void 0, true, {
+      fileName: "/home/wukong/dev/mob/src/client/App.tsx",
+      lineNumber: 354,
+      columnNumber: 7
+    }, this),
+    /* @__PURE__ */ jsxDevRuntimeExports.jsxDEV(
       SettingsModal,
       {
         isOpen: isSettingsOpen,
@@ -22125,11 +22357,27 @@ function App() {
         initialApiKey: settings.apiKey,
         initialModel: settings.model,
         initialProvider: settings.provider
-      }
+      },
+      void 0,
+      false,
+      {
+        fileName: "/home/wukong/dev/mob/src/client/App.tsx",
+        lineNumber: 388,
+        columnNumber: 7
+      },
+      this
     )
-  ] });
+  ] }, void 0, true, {
+    fileName: "/home/wukong/dev/mob/src/client/App.tsx",
+    lineNumber: 308,
+    columnNumber: 5
+  }, this);
 }
 const root = document.getElementById("root");
 if (root) {
-  ReactDOM.createRoot(root).render(/* @__PURE__ */ jsxRuntimeExports.jsx(App, {}));
+  ReactDOM.createRoot(root).render(/* @__PURE__ */ jsxDevRuntimeExports.jsxDEV(App, {}, void 0, false, {
+    fileName: "/home/wukong/dev/mob/src/client/index.tsx",
+    lineNumber: 7,
+    columnNumber: 36
+  }, void 0));
 }
