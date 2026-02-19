@@ -62,7 +62,7 @@ interface BashToolOptions {
  * Create a shared bash instance for tools
  * This allows bash and file tools to share the same bash instance
  */
-export async function createBashContext(options: BashToolOptions): Promise<Bash> {
+export async function createBashInstance(options: BashToolOptions): Promise<Bash> {
   const { fs } = options
 
   // Ensure process shim is available for just-bash
