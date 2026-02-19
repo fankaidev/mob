@@ -1,8 +1,8 @@
 import { Type, type Static } from '@sinclair/typebox'
-import type { AgentTool } from '../pi-agent/types'
 import { Bash } from 'just-bash'
 import type { IFileSystem } from '../fs'
-import { gitCommand, ghCommand } from './bash-commands'
+import type { AgentTool } from '../pi-agent/types'
+import { ghCommand, gitCommand } from './bash-commands'
 
 // ============================================================================
 // Process shim for just-bash (Workers don't have full process object)
@@ -59,47 +59,31 @@ interface BashToolOptions {
 }
 
 /**
- * Create a shared filesystem context for tools
- * This allows bash and file tools to share the same filesystem instance
+ * Create a shared bash instance for tools
+ * This allows bash and file tools to share the same bash instance
  */
-export function createFilesystemContext(options: BashToolOptions) {
-  let bashInstance: Bash | null = null
+export async function createBashContext(options: BashToolOptions): Promise<Bash> {
   const { fs } = options
 
-  const initBash = async () => {
-    if (!bashInstance) {
-      // Ensure process shim is available for just-bash
-      ensureProcessShim()
+  // Ensure process shim is available for just-bash
+  ensureProcessShim()
 
-      // Create bash with external filesystem (MountableFs) and custom commands
-      bashInstance = new Bash({
-        cwd: '/work',
-        fs: fs,
-        customCommands: [gitCommand, ghCommand],
-        network: {
-          dangerouslyAllowFullInternetAccess: true,
-        },
-        python: true,
-      })
-      console.log(`Created bash instance with external filesystem`)
-    }
-    return bashInstance
-  }
+  // Create bash with external filesystem (MountableFs) and custom commands
+  const bashInstance = new Bash({
+    cwd: '/work',
+    fs: fs,
+    customCommands: [gitCommand, ghCommand],
+    network: {
+      dangerouslyAllowFullInternetAccess: true,
+    },
+    python: true,
+  })
+  console.log(`Created bash instance with external filesystem`)
 
-  // No-op since we use MountableFs which handles persistence via mount-store
-  const saveFiles = async () => {
-    // Files are persisted via mount records in D1, not individual files
-  }
-
-  return {
-    getBash: () => bashInstance,
-    initBash,
-    saveFiles,
-    fs,
-  }
+  return bashInstance
 }
 
-export function createBashTool(context: ReturnType<typeof createFilesystemContext>): AgentTool<typeof bashSchema> {
+export function createBashTool(bash: Bash): AgentTool<typeof bashSchema> {
   return {
     label: 'Bash',
     name: 'bash',
@@ -111,12 +95,9 @@ export function createBashTool(context: ReturnType<typeof createFilesystemContex
         throw new Error('Execution aborted')
       }
 
-      // Initialize bash instance on first use
-      const bashInstance = await context.initBash()
-
       try {
         // Execute the command
-        const result = await bashInstance.exec(args.command)
+        const result = await bash.exec(args.command)
 
         // Combine stdout and stderr
         const output = [result.stdout, result.stderr]

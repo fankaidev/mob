@@ -11,7 +11,7 @@ const readSchema = Type.Object({
   }),
 })
 
-export function createReadTool(getBash: () => Bash | null): AgentTool<typeof readSchema> {
+export function createReadTool(bash: Bash): AgentTool<typeof readSchema> {
   return {
     label: 'Read',
     name: 'read',
@@ -20,17 +20,6 @@ export function createReadTool(getBash: () => Bash | null): AgentTool<typeof rea
     execute: async (_toolCallId: string, args: Static<typeof readSchema>, signal?: AbortSignal) => {
       if (signal?.aborted) {
         throw new Error('Execution aborted')
-      }
-
-      const bash = getBash()
-      if (!bash) {
-        return {
-          content: [{
-            type: 'text' as const,
-            text: 'Error: Bash instance not initialized. Please run a bash command first.'
-          }],
-          details: { error: 'Bash not initialized' }
-        }
       }
 
       try {
@@ -69,8 +58,7 @@ const writeSchema = Type.Object({
 })
 
 export function createWriteTool(
-  getBash: () => Bash | null,
-  onFilesChanged: () => Promise<void>
+  bash: Bash
 ): AgentTool<typeof writeSchema> {
   return {
     label: 'Write',
@@ -82,20 +70,8 @@ export function createWriteTool(
         throw new Error('Execution aborted')
       }
 
-      const bash = getBash()
-      if (!bash) {
-        return {
-          content: [{
-            type: 'text' as const,
-            text: 'Error: Bash instance not initialized. Please run a bash command first.'
-          }],
-          details: { error: 'Bash not initialized' }
-        }
-      }
-
       try {
         await bash.writeFile(args.path, args.content)
-        await onFilesChanged()
 
         return {
           content: [{
@@ -134,8 +110,7 @@ const editSchema = Type.Object({
 })
 
 export function createEditTool(
-  getBash: () => Bash | null,
-  onFilesChanged: () => Promise<void>
+  bash: Bash
 ): AgentTool<typeof editSchema> {
   return {
     label: 'Edit',
@@ -145,17 +120,6 @@ export function createEditTool(
     execute: async (_toolCallId: string, args: Static<typeof editSchema>, signal?: AbortSignal) => {
       if (signal?.aborted) {
         throw new Error('Execution aborted')
-      }
-
-      const bash = getBash()
-      if (!bash) {
-        return {
-          content: [{
-            type: 'text' as const,
-            text: 'Error: Bash instance not initialized. Please run a bash command first.'
-          }],
-          details: { error: 'Bash not initialized' }
-        }
       }
 
       try {
@@ -178,7 +142,6 @@ export function createEditTool(
 
         // Write back
         await bash.writeFile(args.path, newContent)
-        await onFilesChanged()
 
         return {
           content: [{
@@ -250,7 +213,7 @@ async function listFilesRecursive(bash: Bash, dirPath: string, prefix: string = 
   return results
 }
 
-export function createListTool(getBash: () => Bash | null): AgentTool<typeof listSchema> {
+export function createListTool(bash: Bash): AgentTool<typeof listSchema> {
   return {
     label: 'List',
     name: 'list',
@@ -259,17 +222,6 @@ export function createListTool(getBash: () => Bash | null): AgentTool<typeof lis
     execute: async (_toolCallId: string, args: Static<typeof listSchema>, signal?: AbortSignal) => {
       if (signal?.aborted) {
         throw new Error('Execution aborted')
-      }
-
-      const bash = getBash()
-      if (!bash) {
-        return {
-          content: [{
-            type: 'text' as const,
-            text: 'Error: Bash instance not initialized. Please run a bash command first.'
-          }],
-          details: { error: 'Bash not initialized' }
-        }
       }
 
       const dirPath = args.path || '/work'
