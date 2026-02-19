@@ -73,7 +73,7 @@ export function createFilesystemContext(options: BashToolOptions) {
 
       // Create bash with external filesystem (MountableFs) and custom commands
       bashInstance = new Bash({
-        cwd: '/tmp',
+        cwd: '/work',
         fs: fs,
         customCommands: [gitCommand, ghCommand],
         network: {

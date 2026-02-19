@@ -2,6 +2,8 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import type { Env } from './types'
 import api from './routes/api'
+import admin from './routes/admin'
+import slack from './routes/slack'
 import web from './routes/web'
 
 const app = new Hono<Env>()
@@ -21,6 +23,12 @@ app.get('/health', (c) => {
 
 // Mount API routes
 app.route('/api', api)
+
+// Mount Admin routes (should be protected by Cloudflare Access in production)
+app.route('/api/admin', admin)
+
+// Mount Slack routes (separate from API for clarity)
+app.route('/api/slack', slack)
 
 // Mount web routes
 app.route('/', web)

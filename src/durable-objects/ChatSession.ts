@@ -9,15 +9,14 @@
  */
 
 import type { DurableObjectState } from '@cloudflare/workers-types'
+import { D1FileSystem, MountableFs } from '../lib/fs'
+import { restoreMounts } from '../lib/fs/mount-store'
 import { Agent } from '../lib/pi-agent'
 import type { AgentMessage } from '../lib/pi-agent/types'
 import type { Model } from '../lib/pi-ai/types'
-import { createFilesystemContext, createBashTool } from '../lib/tools/bash'
-import { createReadTool, createWriteTool, createEditTool, createListTool } from '../lib/tools/file-tools'
-import { createMountTool, createUnmountTool, createListMountsTool } from '../lib/tools/mount-tools'
-import { D1FileSystem, MountableFs } from '../lib/fs'
-import { restoreMounts } from '../lib/fs/mount-store'
-import SYSTEM_PROMPT from '../SYSTEM_PROMPT.md?raw'
+import { createBashTool, createFilesystemContext } from '../lib/tools/bash'
+import { createEditTool, createListTool, createReadTool, createWriteTool } from '../lib/tools/file-tools'
+import { createListMountsTool, createMountTool, createUnmountTool } from '../lib/tools/mount-tools'
 
 interface Env {
   DB: D1Database
@@ -141,12 +140,14 @@ export class ChatSession {
 
     // POST /chat - Send message and get streaming response
     if (request.method === 'POST' && url.pathname === '/chat') {
-      const { message, baseUrl, apiKey, model, provider } = await request.json() as {
+      const { message, baseUrl, apiKey, model, provider, contextMessages, systemPrompt } = await request.json() as {
         message: string
         baseUrl: string
         apiKey: string
         model: string
         provider: string
+        contextMessages?: AgentMessage[]
+        systemPrompt?: string
       }
 
       if (!message?.trim()) {
@@ -183,7 +184,7 @@ export class ChatSession {
       const encoder = new TextEncoder()
 
       // Handle chat in background
-      this.handleChat(message, baseUrl, apiKey, model, provider, writer, encoder).catch((error) => {
+      this.handleChat(message, baseUrl, apiKey, model, provider, writer, encoder, contextMessages, systemPrompt).catch((error) => {
         console.error('Chat error:', error)
         writer.write(encoder.encode(`data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`))
         writer.close()
@@ -202,7 +203,67 @@ export class ChatSession {
   }
 
   /**
+   * Default system prompt
+   */
+  private getDefaultSystemPrompt(): string {
+    return `You are a helpful AI assistant built with Hono and Cloudflare Workers.
+Be concise and friendly. Format your responses using markdown when appropriate.
+
+You have access to the following tools:
+
+**File Operations:**
+- read: Read the contents of a file
+- write: Write content to a file (creates or overwrites)
+- edit: Edit a file by replacing specific text
+- list: List files and directories
+
+**Bash Commands:**
+- bash: Execute shell commands (ls, cat, grep, sed, awk, find, etc.), only selected commands are supported.
+- git: Git commands (status, add, commit, push, checkout, branch, log) - only works in /mnt/git
+- gh: GitHub CLI (gh pr create) - only works in /mnt/git
+
+**Git Repository Mounting:**
+- mount: Clone and mount a git repository at /mnt/git
+- unmount: Remove the mounted repository
+- list_mounts: List the currently mounted repository
+
+All file operations work with the shared filesystem. The filesystem starts at /work as the working directory.
+
+**File Persistence:**
+- Files under /work are **shared and persistent** across all sessions
+- Other directories (like /tmp) are session-isolated
+- Always save important files to /work for persistence
+
+Use 'ls /mnt' or list with path="/mnt" to see mounted repositories.
+
+**When to use each tool:**
+- Use \`read\` to view file contents
+- Use \`write\` to create new files or completely replace file contents
+- Use \`edit\` to make specific changes to existing files
+- Use \`list\` to see what files exist
+- Use \`bash\` for complex operations, piping, text processing, and git/gh commands
+- Use \`mount\` to clone a git repository for browsing
+
+**Workflow example for browsing a git repository:**
+1. Mount the repo: mount({ url: "https://github.com/facebook/react.git" })
+2. List files: list({ path: "/mnt/git" }) or bash({ command: "ls /mnt/git" })
+3. Read a file: read({ path: "/mnt/git/README.md" })
+4. Search code: bash({ command: "grep -r 'useState' /mnt/git/packages --include='*.js'" })
+
+**Workflow example for modifying code and creating a PR:**
+1. Mount a forked repo with token: mount({ url: "https://github.com/user/repo.git", token: "ghp_xxx" })
+2. Set GITHUB_TOKEN: bash({ command: "export GITHUB_TOKEN=ghp_xxx" })
+3. Create a new branch: bash({ command: "cd /mnt/git && git checkout -b fix/typo" })
+4. Modify a file: edit({ path: "/mnt/git/README.md", oldText: "...", newText: "..." })
+5. Stage and commit: bash({ command: "cd /mnt/git && git add . && git commit -m 'Fix typo'" })
+6. Push to remote: bash({ command: "cd /mnt/git && git push" })
+7. Create a PR: bash({ command: "cd /mnt/git && gh pr create --title 'Fix typo' --body 'Fixed a typo in README'" })`
+  }
+
+  /**
    * Handle chat message with streaming
+   * @param contextMessages - Optional messages from external context (e.g., Slack thread history)
+   * @param systemPrompt - Optional custom system prompt
    */
   private async handleChat(
     message: string,
@@ -211,14 +272,11 @@ export class ChatSession {
     model: string,
     provider: string,
     writer: WritableStreamDefaultWriter,
-    encoder: TextEncoder
+    encoder: TextEncoder,
+    contextMessages?: AgentMessage[],
+    systemPrompt?: string
   ) {
     try {
-      console.log('Starting chat session:', this.sessionId)
-      console.log('Message:', message)
-      console.log('Base URL:', baseUrl)
-      console.log('API Key length:', apiKey?.length || 0)
-
       // Send session ID
       await writer.write(encoder.encode(
         `data: ${JSON.stringify({ type: 'session_id', sessionId: this.sessionId })}\n\n`
@@ -226,7 +284,6 @@ export class ChatSession {
 
       // Create agent with existing messages
       const modelConfig = this.buildModel(baseUrl, model, provider)
-      console.log('Model:', modelConfig)
 
       // Create shared filesystem context for all tools
       const fsContext = createFilesystemContext({
@@ -252,12 +309,25 @@ export class ChatSession {
       const unmountTool = createUnmountTool(mountToolOptions)
       const listMountsTool = createListMountsTool(mountToolOptions)
 
+      // Determine which messages to use:
+      // - If contextMessages provided (e.g., from Slack thread), use those
+      // - Otherwise use stored session messages
+      const initialMessages = contextMessages && contextMessages.length > 0
+        ? contextMessages
+        : this.messages
+
+      // Build final system prompt: default + optional custom prompt appended
+      const defaultPrompt = this.getDefaultSystemPrompt()
+      const finalSystemPrompt = systemPrompt
+        ? `${defaultPrompt}\n\n---\n\n${systemPrompt}`
+        : defaultPrompt
+
       const agent = new Agent({
         initialState: {
           model: modelConfig,
-          systemPrompt: SYSTEM_PROMPT,
+          systemPrompt: finalSystemPrompt,
           tools: [readTool, writeTool, editTool, listTool, bashTool, mountTool, unmountTool, listMountsTool],
-          messages: this.messages,
+          messages: initialMessages,
         },
         getApiKey: async () => apiKey,
       })
@@ -269,24 +339,19 @@ export class ChatSession {
       // Subscribe to agent events for streaming
       agent.subscribe(async (event) => {
         eventCount++
-        console.log('Agent event:', event.type, 'count:', eventCount)
-        console.log('Event details:', JSON.stringify(event, null, 2))
 
         // Extract text from message updates
         if (event.type === 'message_update' && event.message.role === 'assistant') {
-          console.log('Assistant message update, content:', JSON.stringify(event.message.content))
           const content = event.message.content
           if (Array.isArray(content)) {
             const textParts = content
               .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
               .map(c => c.text)
 
-            console.log('Text parts:', textParts)
             if (textParts.length > 0) {
               const fullText = textParts.join('')
               // Send only the new delta
               const deltaText = fullText.slice(previousTextLength)
-              console.log('Delta text:', deltaText, 'length:', deltaText.length)
               if (deltaText) {
                 await writer.write(encoder.encode(
                   `data: ${JSON.stringify({ type: 'text', text: deltaText })}\n\n`
@@ -299,9 +364,7 @@ export class ChatSession {
       })
 
       // Run agent
-      console.log('Calling agent.prompt()...')
       await agent.prompt(message)
-      console.log('Agent.prompt() completed, event count:', eventCount)
 
       // Update in-memory messages
       this.messages = agent.state.messages.map((msg) =>

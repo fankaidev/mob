@@ -385,3 +385,209 @@ button:disabled {
   border-color: #2563eb;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
 }
+
+.form-group textarea {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 80px;
+}
+
+.form-group textarea:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+/* Large Settings Modal */
+.settings-modal-large {
+  max-width: 700px;
+  max-height: 90vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Settings Tabs */
+.settings-tabs {
+  display: flex;
+  border-bottom: 1px solid #e5e7eb;
+  margin-bottom: 1rem;
+  gap: 0.5rem;
+}
+
+.settings-tab {
+  padding: 0.75rem 1rem;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: #6b7280;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.settings-tab:hover {
+  color: #374151;
+  background: #f9fafb;
+}
+
+.settings-tab.active {
+  color: #2563eb;
+  border-bottom-color: #2563eb;
+}
+
+/* Settings Content */
+.settings-content {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 300px;
+}
+
+/* Config List */
+.config-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.config-item {
+  padding: 1rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.config-item:hover {
+  border-color: #2563eb;
+  background: #f0f9ff;
+}
+
+.config-item.selected {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.config-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.25rem;
+}
+
+.config-name {
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.config-item-details {
+  display: flex;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.config-selected-badge {
+  background: #2563eb;
+  color: white;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.config-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.config-actions button {
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.config-actions button:hover {
+  background: #e5e7eb;
+}
+
+.config-actions button.danger {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.config-actions button.danger:hover {
+  background: #fee2e2;
+}
+
+/* Add Button */
+.add-btn {
+  width: 100%;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+  background: #f3f4f6;
+  color: #374151;
+  border: 2px dashed #d1d5db;
+  font-weight: 500;
+}
+
+.add-btn:hover {
+  background: #e5e7eb;
+  border-color: #9ca3af;
+}
+
+/* Config Form */
+.config-form {
+  padding: 0.5rem;
+}
+
+.config-form h3 {
+  font-size: 1.125rem;
+  margin-bottom: 1rem;
+  color: #1f2937;
+}
+
+.form-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.form-actions button {
+  padding: 0.5rem 1rem;
+}
+
+.form-actions button.primary {
+  background: #2563eb;
+  color: white;
+}
+
+.form-actions button.primary:hover {
+  background: #1d4ed8;
+}
+
+/* Empty State */
+.empty-state {
+  text-align: center;
+  padding: 2rem;
+  color: #6b7280;
+}
+
+/* Config Badge in Header */
+.config-badge {
+  background: rgba(255,255,255,0.2);
+  padding: 0.25rem 0.75rem;
+  border-radius: 1rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
