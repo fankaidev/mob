@@ -35,6 +35,7 @@ export type SlackPayload = SlackEventCallback | SlackUrlVerification
 export interface SlackMessage {
   type: string
   user?: string
+  user_name?: string  // User display name (enriched from cache)
   bot_id?: string
   text: string
   ts: string
@@ -61,6 +62,25 @@ export interface ChatPostMessageResponse {
   ok: boolean
   ts?: string
   channel?: string
+  error?: string
+}
+
+export interface SlackUserProfile {
+  display_name?: string
+  real_name?: string
+  image_72?: string
+}
+
+export interface SlackUser {
+  id: string
+  name: string
+  real_name?: string
+  profile?: SlackUserProfile
+}
+
+export interface UsersInfoResponse {
+  ok: boolean
+  user?: SlackUser
   error?: string
 }
 
@@ -97,6 +117,16 @@ export interface SlackThreadMapping {
   channel: string
   thread_ts: string | null
   user_id: string | null
+  created_at: number
+  updated_at: number
+}
+
+export interface SlackUserCache {
+  user_id: string
+  app_id: string
+  name: string
+  real_name: string | null
+  avatar_url: string | null
   created_at: number
   updated_at: number
 }

@@ -8,6 +8,7 @@ import type {
   SlackAppConfig,
   SlackEvent,
   SlackPayload,
+  SlackUserCache,
 } from '../lib/slack'
 import {
   convertSlackToAgentMessages,
@@ -106,6 +107,84 @@ async function saveThreadMapping(
     .run()
 }
 
+/**
+ * Get user info from cache
+ */
+async function getCachedUserInfo(
+  db: D1Database,
+  appId: string,
+  userId: string
+): Promise<SlackUserCache | null> {
+  const result = await db
+    .prepare('SELECT * FROM slack_users WHERE app_id = ? AND user_id = ?')
+    .bind(appId, userId)
+    .first<SlackUserCache>()
+  return result || null
+}
+
+/**
+ * Save user info to cache
+ */
+async function saveUserInfo(
+  db: D1Database,
+  appId: string,
+  userId: string,
+  name: string,
+  realName: string | null,
+  avatarUrl: string | null
+): Promise<void> {
+  const now = Date.now()
+  await db
+    .prepare(`
+      INSERT INTO slack_users (user_id, app_id, name, real_name, avatar_url, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(user_id, app_id) DO UPDATE SET
+        name = excluded.name,
+        real_name = excluded.real_name,
+        avatar_url = excluded.avatar_url,
+        updated_at = excluded.updated_at
+    `)
+    .bind(userId, appId, name, realName, avatarUrl, now, now)
+    .run()
+}
+
+/**
+ * Get or fetch user info with caching
+ */
+async function getUserInfo(
+  db: D1Database,
+  client: SlackClient,
+  appId: string,
+  userId: string
+): Promise<string> {
+  // Try cache first
+  const cached = await getCachedUserInfo(db, appId, userId)
+  if (cached) {
+    return cached.name
+  }
+
+  // Fetch from Slack API
+  try {
+    const response = await client.getUserInfo(userId)
+    if (response.ok && response.user) {
+      const user = response.user
+      // Priority: display_name > real_name > username
+      const displayName = user.profile?.display_name || user.real_name || user.name
+      const realName = user.real_name || null
+      const avatarUrl = user.profile?.image_72 || null
+
+      // Save to cache
+      await saveUserInfo(db, appId, userId, displayName, realName, avatarUrl)
+      return displayName
+    }
+  } catch (error) {
+    console.error('Failed to fetch user info:', error)
+  }
+
+  // Fallback to user ID if everything fails
+  return userId
+}
+
 // ============================================================================
 // Thread key generation
 // ============================================================================
@@ -194,7 +273,7 @@ async function handleSlackMessage(
     }
 
     // Extract user message from event
-    const userMessage = extractUserMessage(event.text || '', botUserId || undefined)
+    let userMessage = extractUserMessage(event.text || '', botUserId || undefined)
     // Only require a message for new conversations (not replies in threads)
     if (!userMessage && !event.thread_ts) {
       await client.postMessage(
@@ -205,10 +284,24 @@ async function handleSlackMessage(
       return
     }
 
+    // Prepend user name to the current message
+    if (userMessage && event.user) {
+      const userName = await getUserInfo(env.DB, client, appConfig.app_id, event.user)
+      userMessage = `[user:${userName}] ${userMessage}`
+    }
+
     // Get thread history if this is a reply in a thread
     let contextMessages: any[] = []
     if (event.thread_ts) {
       const threadMessages = await client.getThreadReplies(channel, event.thread_ts)
+
+      // Enrich messages with user names
+      for (const msg of threadMessages) {
+        if (msg.user && !msg.bot_id && msg.user !== botUserId) {
+          msg.user_name = await getUserInfo(env.DB, client, appConfig.app_id, msg.user)
+        }
+      }
+
       // Exclude the current message (last one) since we'll add it separately
       const historyMessages = threadMessages.slice(0, -1)
       contextMessages = convertSlackToAgentMessages(historyMessages, botUserId || undefined)

@@ -105,3 +105,18 @@ CREATE TABLE IF NOT EXISTS slack_thread_mapping (
 -- Index for efficient thread lookups
 CREATE INDEX IF NOT EXISTS idx_slack_thread_key ON slack_thread_mapping(thread_key);
 CREATE INDEX IF NOT EXISTS idx_slack_thread_session ON slack_thread_mapping(session_id);
+
+-- Slack users table - caches Slack user information
+CREATE TABLE IF NOT EXISTS slack_users (
+  user_id TEXT NOT NULL,                   -- Slack User ID (e.g., U0XXXXXXX)
+  app_id TEXT NOT NULL,                    -- Slack App ID (for multi-workspace support)
+  name TEXT NOT NULL,                      -- User's display name
+  real_name TEXT,                          -- User's real name (optional)
+  avatar_url TEXT,                         -- User's avatar URL (optional)
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, app_id)
+);
+
+-- Index for efficient user lookups
+CREATE INDEX IF NOT EXISTS idx_slack_users_lookup ON slack_users(app_id, user_id);
