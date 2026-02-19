@@ -17,12 +17,12 @@ import {
 // Mount Tool - Clone and mount a git repository
 // ============================================================================
 
+// Fixed mount path for git repositories
+export const GIT_MOUNT_PATH = '/mnt/git'
+
 const mountSchema = Type.Object({
   url: Type.String({
     description: 'Git repository URL (e.g., https://github.com/owner/repo.git)',
-  }),
-  mount_path: Type.String({
-    description: 'Path to mount the repository (e.g., /mnt/repo)',
   }),
   ref: Type.Optional(Type.String({
     description: 'Branch or tag to checkout (default: default branch)',
@@ -37,17 +37,18 @@ const mountSchema = Type.Object({
 
 const MOUNT_TOOL_DESCRIPTION = `Mount a git repository to browse its files.
 
-This tool clones a git repository into memory and mounts it at the specified path.
+This tool clones a git repository into memory and mounts it at /mnt/git.
 After mounting, you can browse the repository files using the bash tool.
 
 Examples:
-- Mount public repo: { "url": "https://github.com/facebook/react.git", "mount_path": "/mnt/react" }
-- Mount with branch: { "url": "https://github.com/owner/repo.git", "mount_path": "/mnt/repo", "ref": "develop" }
-- Mount private repo: { "url": "https://github.com/owner/private.git", "mount_path": "/mnt/private", "token": "ghp_..." }
+- Mount public repo: { "url": "https://github.com/facebook/react.git" }
+- Mount with branch: { "url": "https://github.com/owner/repo.git", "ref": "develop" }
+- Mount private repo: { "url": "https://github.com/owner/private.git", "token": "ghp_..." }
 
 Notes:
 - Default depth=1 (shallow clone) to save memory
-- Mount paths must start with /mnt/
+- Repository is always mounted at /mnt/git
+- Only one repository can be mounted at a time
 - Files are persisted and restored across sessions
 - Large repositories may take longer to clone`
 
@@ -71,17 +72,6 @@ export function createMountTool(options: MountToolOptions): AgentTool<typeof mou
       }
 
       try {
-        // Validate mount path
-        if (!args.mount_path.startsWith('/mnt/')) {
-          return {
-            content: [{
-              type: 'text' as const,
-              text: `Error: Mount path must start with /mnt/. Got: ${args.mount_path}`,
-            }],
-            details: { error: 'Invalid mount path' },
-          }
-        }
-
         // Prepare config
         const config: GitMountConfig = {
           url: args.url,
@@ -90,18 +80,18 @@ export function createMountTool(options: MountToolOptions): AgentTool<typeof mou
           token: args.token,
         }
 
-        // Clone and mount
-        const { fileCount } = await cloneAndMount(mountableFs, config, args.mount_path)
+        // Clone and mount at fixed path
+        const { fileCount } = await cloneAndMount(mountableFs, config, GIT_MOUNT_PATH)
 
         // Persist to D1
-        await saveMountRecord(db, sessionId, args.mount_path, 'git', config)
+        await saveMountRecord(db, sessionId, GIT_MOUNT_PATH, 'git', config)
 
         return {
           content: [{
             type: 'text' as const,
-            text: `Successfully mounted ${args.url} at ${args.mount_path}\nFiles: ${fileCount}\n\nYou can now browse the repository using bash commands like:\n- ls ${args.mount_path}\n- cat ${args.mount_path}/README.md`,
+            text: `Successfully mounted ${args.url} at ${GIT_MOUNT_PATH}\nFiles: ${fileCount}\n\nYou can now browse the repository using bash commands like:\n- ls ${GIT_MOUNT_PATH}\n- cat ${GIT_MOUNT_PATH}/README.md\n\nGit commands (git, gh) are available when working in ${GIT_MOUNT_PATH}.`,
           }],
-          details: { fileCount, mountPath: args.mount_path, url: args.url },
+          details: { fileCount, mountPath: GIT_MOUNT_PATH, url: args.url },
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error)
@@ -121,17 +111,12 @@ export function createMountTool(options: MountToolOptions): AgentTool<typeof mou
 // Unmount Tool - Remove a mounted repository
 // ============================================================================
 
-const unmountSchema = Type.Object({
-  mount_path: Type.String({
-    description: 'Path of the mounted repository to unmount (e.g., /mnt/repo)',
-  }),
-})
+const unmountSchema = Type.Object({})
 
-const UNMOUNT_TOOL_DESCRIPTION = `Unmount a previously mounted repository.
+const UNMOUNT_TOOL_DESCRIPTION = `Unmount the currently mounted git repository.
 
 This removes the repository from the virtual filesystem and deletes the mount record.
-
-Example: { "mount_path": "/mnt/react" }`
+No parameters required - unmounts from /mnt/git.`
 
 export function createUnmountTool(options: MountToolOptions): AgentTool<typeof unmountSchema> {
   const { mountableFs, sessionId, db } = options
@@ -141,24 +126,24 @@ export function createUnmountTool(options: MountToolOptions): AgentTool<typeof u
     name: 'unmount',
     description: UNMOUNT_TOOL_DESCRIPTION,
     parameters: unmountSchema,
-    execute: async (_toolCallId: string, args: Static<typeof unmountSchema>, signal?: AbortSignal) => {
+    execute: async (_toolCallId: string, _args: Static<typeof unmountSchema>, signal?: AbortSignal) => {
       if (signal?.aborted) {
         throw new Error('Execution aborted')
       }
 
       try {
         // Unmount from filesystem
-        mountableFs.unmount(args.mount_path)
+        mountableFs.unmount(GIT_MOUNT_PATH)
 
         // Remove from D1
-        await removeMountRecord(db, sessionId, args.mount_path)
+        await removeMountRecord(db, sessionId, GIT_MOUNT_PATH)
 
         return {
           content: [{
             type: 'text' as const,
-            text: `Successfully unmounted ${args.mount_path}`,
+            text: `Successfully unmounted ${GIT_MOUNT_PATH}`,
           }],
-          details: { mountPath: args.mount_path },
+          details: { mountPath: GIT_MOUNT_PATH },
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error)
