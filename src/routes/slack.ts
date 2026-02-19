@@ -251,6 +251,8 @@ async function handleSlackMessage(
   const threadTs = event.thread_ts || event.ts!
   const threadKey = getThreadKey(appConfig.app_id, event)
 
+  console.log('handleSlackMessage', event)
+
   try {
     // Get or fetch bot user ID
     let botUserId = appConfig.bot_user_id
