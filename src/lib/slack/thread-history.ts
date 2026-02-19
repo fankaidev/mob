@@ -36,11 +36,16 @@ export function convertSlackToAgentMessages(
       const isBot = msg.bot_id !== undefined || (botUserId && msg.user === botUserId)
 
       // Clean up the text
-      const text = isBot ? msg.text : stripBotMention(msg.text, botUserId)
+      let text = isBot ? msg.text : stripBotMention(msg.text, botUserId)
 
       // Skip empty messages after stripping mentions
       if (!text) {
         return null
+      }
+
+      // Prepend user name for user messages
+      if (!isBot && msg.user_name) {
+        text = `[user:${msg.user_name}] ${text}`
       }
 
       return {

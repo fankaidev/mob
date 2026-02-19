@@ -7,6 +7,7 @@ import type {
   ConversationsRepliesResponse,
   AuthTestResponse,
   ChatPostMessageResponse,
+  UsersInfoResponse,
 } from './types'
 
 const SLACK_API_BASE = 'https://slack.com/api'
@@ -78,6 +79,23 @@ export class SlackClient {
 
     const data = (await response.json()) as AuthTestResponse
     return data.ok ? data.user_id || null : null
+  }
+
+  /**
+   * Get user information
+   */
+  async getUserInfo(userId: string): Promise<UsersInfoResponse> {
+    const url = new URL(`${SLACK_API_BASE}/users.info`)
+    url.searchParams.set('user', userId)
+
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${this.botToken}`,
+      },
+    })
+
+    return response.json() as Promise<UsersInfoResponse>
   }
 }
 
