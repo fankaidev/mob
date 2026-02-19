@@ -14,7 +14,7 @@ import { restoreMounts } from '../lib/fs/mount-store'
 import { Agent } from '../lib/pi-agent'
 import type { AgentMessage } from '../lib/pi-agent/types'
 import type { Model } from '../lib/pi-ai/types'
-import { createBashTool, createFilesystemContext } from '../lib/tools/bash'
+import { createBashTool, createBashContext } from '../lib/tools/bash'
 import { createEditTool, createListTool, createReadTool, createWriteTool } from '../lib/tools/file-tools'
 import { createListMountsTool, createMountTool, createUnmountTool } from '../lib/tools/mount-tools'
 
@@ -285,19 +285,19 @@ Use 'ls /mnt' or list with path="/mnt" to see mounted repositories.
       // Create agent with existing messages
       const modelConfig = this.buildModel(baseUrl, model, provider)
 
-      // Create shared filesystem context for all tools
-      const fsContext = createFilesystemContext({
+      // Create shared bash instance for all tools
+      const bash = await createBashContext({
         sessionId: this.sessionId,
         db: this.env.DB,
         fs: this.mountableFs!,
       })
 
       // Create file operation tools
-      const bashTool = createBashTool(fsContext)
-      const readTool = createReadTool(fsContext.getBash)
-      const writeTool = createWriteTool(fsContext.getBash, fsContext.saveFiles)
-      const editTool = createEditTool(fsContext.getBash, fsContext.saveFiles)
-      const listTool = createListTool(fsContext.getBash)
+      const bashTool = createBashTool(bash)
+      const readTool = createReadTool(bash)
+      const writeTool = createWriteTool(bash)
+      const editTool = createEditTool(bash)
+      const listTool = createListTool(bash)
 
       // Create mount tools with shared MountableFs
       const mountToolOptions = {
