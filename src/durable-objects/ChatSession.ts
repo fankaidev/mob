@@ -42,15 +42,17 @@ export class ChatSession {
   }
 
   /**
-   * Initialize session from D1 database
+   * Initialize session from D1 database (lightweight - just load messages)
    */
   private async initialize() {
     if (this.initialized) return
+    const startTime = Date.now()
 
     // Check if session exists in D1
     const session = await this.env.DB.prepare(
       'SELECT * FROM sessions WHERE id = ?'
     ).bind(this.sessionId).first()
+    console.log(`[Perf] Session query: ${Date.now() - startTime}ms`)
 
     if (!session) {
       // Create new session
@@ -62,12 +64,25 @@ export class ChatSession {
       this.messages = []
     } else {
       // Load existing messages
+      const msgStart = Date.now()
       const result = await this.env.DB.prepare(
         'SELECT role, content FROM messages WHERE session_id = ? ORDER BY created_at ASC'
       ).bind(this.sessionId).all()
+      console.log(`[Perf] Messages query: ${Date.now() - msgStart}ms, count: ${result.results.length}`)
 
       this.messages = result.results.map((row: any) => JSON.parse(row.content))
     }
+
+    this.initialized = true
+    console.log(`[Perf] Total initialize: ${Date.now() - startTime}ms`)
+  }
+
+  /**
+   * Initialize filesystem (lazy - only when needed for chat)
+   */
+  private async initializeFilesystem() {
+    if (this.mountableFs) return
+    const startTime = Date.now()
 
     // Initialize MountableFs with D1FileSystem base for persistent storage
     const baseFs = new D1FileSystem(this.env.DB, this.sessionId)
@@ -85,7 +100,10 @@ export class ChatSession {
       ).bind(SHARED_SESSION_ID, now, now, 'active').run()
     }
 
+    const dirStart = Date.now()
     await baseFs.initializeDefaultDirectories()
+    console.log(`[Perf] Initialize directories: ${Date.now() - dirStart}ms`)
+
     this.mountableFs = new MountableFs({ base: baseFs })
 
     // Create /mnt directory for git mounts
@@ -96,9 +114,11 @@ export class ChatSession {
     }
 
     // Restore persisted mounts
+    const mountStart = Date.now()
     await restoreMounts(this.env.DB, this.sessionId, this.mountableFs)
+    console.log(`[Perf] Restore mounts: ${Date.now() - mountStart}ms`)
 
-    this.initialized = true
+    console.log(`[Perf] Total filesystem init: ${Date.now() - startTime}ms`)
   }
 
   /**
@@ -288,6 +308,9 @@ export class ChatSession {
     encoder: TextEncoder
   ) {
     try {
+      // Initialize filesystem for bash commands
+      await this.initializeFilesystem()
+
       // Send session ID
       await writer.write(encoder.encode(
         `data: ${JSON.stringify({ type: 'session_id', sessionId: this.sessionId })}\n\n`
@@ -370,6 +393,9 @@ export class ChatSession {
     systemPrompt?: string
   ) {
     try {
+      // Initialize filesystem for chat (with tools)
+      await this.initializeFilesystem()
+
       // Send session ID
       await writer.write(encoder.encode(
         `data: ${JSON.stringify({ type: 'session_id', sessionId: this.sessionId })}\n\n`
