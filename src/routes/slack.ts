@@ -16,6 +16,7 @@ import {
   truncateForSlack,
   verifySlackSignature,
 } from '../lib/slack'
+import { generateSessionId } from '../lib/utils'
 import type { Env } from '../types'
 
 const slack = new Hono<Env>()
@@ -217,10 +218,7 @@ async function handleSlackMessage(
     let sessionId = await getSessionIdFromThreadKey(env.DB, threadKey)
     if (!sessionId) {
       // Generate session ID in format: slack-YYYYMMDDTHHmmssZ-{random}
-      const now = new Date()
-      const isoString = now.toISOString().replace(/[-:]/g, '').split('.')[0]
-      const random = Math.random().toString(36).slice(2, 10)
-      sessionId = `slack-${isoString}-${random}`
+      sessionId = generateSessionId('slack')
     }
 
     // Get Durable Object
