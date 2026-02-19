@@ -77,9 +77,9 @@ export function createFilesystemContext(options: BashToolOptions) {
         fs: fs,
         customCommands: [gitCommand, ghCommand],
         network: {
-          allowedUrlPrefixes: ['https://api.github.com'],
-          allowedMethods: ['GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'PATCH'],
+          dangerouslyAllowFullInternetAccess: true,
         },
+        python: true,
       })
       console.log(`Created bash instance with external filesystem`)
     }

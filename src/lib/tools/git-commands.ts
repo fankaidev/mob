@@ -14,6 +14,16 @@ if (typeof globalThis.Buffer === 'undefined') {
   ;(globalThis as any).Buffer = Buffer
 }
 
+// Fixed mount path for git repositories - must match mount-tools.ts
+const GIT_MOUNT_PATH = '/mnt/git'
+
+/**
+ * Check if the current working directory is within the git mount path
+ */
+function isInGitMount(cwd: string): boolean {
+  return cwd === GIT_MOUNT_PATH || cwd.startsWith(GIT_MOUNT_PATH + '/')
+}
+
 /**
  * Adapt IFileSystem to isomorphic-git's fs.promises interface
  */
@@ -208,10 +218,20 @@ async function parseRemoteUrl(fs: any, dir: string): Promise<{ owner: string; re
 // ============================================================================
 
 export const gitCommand = defineCommand('git', async (args: string[], ctx: CommandContext): Promise<ExecResult> => {
+  // Check if we're in the git mount directory
+  if (!isInGitMount(ctx.cwd)) {
+    return {
+      stdout: '',
+      stderr: `fatal: not a git repository (or any of the parent directories)\ngit commands only work in ${GIT_MOUNT_PATH}. Use 'cd ${GIT_MOUNT_PATH}' first.`,
+      exitCode: 128,
+    }
+  }
+
   const subcommand = args[0]
   const subArgs = args.slice(1)
   const fs = adaptFs(ctx)
-  const dir = ctx.cwd
+  // Always use GIT_MOUNT_PATH as the git root, even if we're in a subdirectory
+  const dir = GIT_MOUNT_PATH
 
   try {
     switch (subcommand) {
@@ -352,6 +372,15 @@ export const gitCommand = defineCommand('git', async (args: string[], ctx: Comma
 // ============================================================================
 
 export const ghCommand = defineCommand('gh', async (args: string[], ctx: CommandContext): Promise<ExecResult> => {
+  // Check if we're in the git mount directory
+  if (!isInGitMount(ctx.cwd)) {
+    return {
+      stdout: '',
+      stderr: `error: gh commands only work in ${GIT_MOUNT_PATH}. Use 'cd ${GIT_MOUNT_PATH}' first.`,
+      exitCode: 1,
+    }
+  }
+
   const [resource, action, ...actionArgs] = args
 
   if (resource === 'pr' && action === 'create') {
@@ -382,7 +411,8 @@ async function ghPrCreate(args: string[], ctx: CommandContext): Promise<ExecResu
 
   try {
     const fs = adaptFs(ctx)
-    const dir = ctx.cwd
+    // Always use GIT_MOUNT_PATH as the git root
+    const dir = GIT_MOUNT_PATH
 
     // Get owner/repo from remote
     const { owner, repo } = await parseRemoteUrl(fs, dir)
