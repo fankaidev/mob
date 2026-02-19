@@ -66,6 +66,20 @@ export class ChatSession {
 
     // Initialize MountableFs with D1FileSystem base for persistent storage
     const baseFs = new D1FileSystem(this.env.DB, this.sessionId)
+
+    // Ensure the __shared__ session exists for shared files under /work
+    const SHARED_SESSION_ID = '__shared__'
+    const sharedSession = await this.env.DB.prepare(
+      'SELECT id FROM sessions WHERE id = ?'
+    ).bind(SHARED_SESSION_ID).first()
+
+    if (!sharedSession) {
+      const now = Date.now()
+      await this.env.DB.prepare(
+        'INSERT INTO sessions (id, created_at, updated_at, status) VALUES (?, ?, ?, ?)'
+      ).bind(SHARED_SESSION_ID, now, now, 'active').run()
+    }
+
     await baseFs.initializeDefaultDirectories()
     this.mountableFs = new MountableFs({ base: baseFs })
 
