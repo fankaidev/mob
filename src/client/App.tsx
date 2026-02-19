@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { ChatMessage } from './components/ChatMessage'
 import { SettingsModal } from './components/SettingsModal'
+import { generateSessionId } from '../lib/utils'
 
 interface ToolCall {
   name: string
@@ -52,10 +53,7 @@ export function App() {
     let sid = localStorage.getItem('mob-session-id')
     if (!sid) {
       // Generate session ID in format: web-YYYYMMDDTHHmmssZ-{random}
-      const now = new Date()
-      const isoString = now.toISOString().replace(/[-:]/g, '').split('.')[0]
-      const random = Math.random().toString(36).slice(2, 10)
-      sid = `web-${isoString}-${random}`
+      sid = generateSessionId('web')
       localStorage.setItem('mob-session-id', sid)
     }
     setSessionId(sid)
@@ -160,11 +158,8 @@ export function App() {
 
   const createNewSession = async () => {
     // Generate session ID in format: YYYYMMDDTHHmmssZ-{random}
-    const now = new Date()
-    const isoString = now.toISOString().replace(/[-:]/g, '').split('.')[0]
-    const random = Math.random().toString(36).slice(2, 10)
-    const newSessionId = `web-${isoString}-${random}`
-    const timestamp = now.getTime()
+    const newSessionId = generateSessionId('web')
+    const timestamp = new Date().getTime()
 
     localStorage.setItem('mob-session-id', newSessionId)
     setSessionId(newSessionId)
