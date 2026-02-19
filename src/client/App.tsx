@@ -2,9 +2,15 @@ import React, { useState, useEffect, useRef } from 'react'
 import { ChatMessage } from './components/ChatMessage'
 import { SettingsModal } from './components/SettingsModal'
 
+interface ToolCall {
+  name: string
+  args: any
+}
+
 interface Message {
   role: 'user' | 'assistant'
   content: string
+  toolCalls?: ToolCall[]
 }
 
 interface Session {
@@ -120,8 +126,20 @@ export function App() {
               .filter((c: any) => c.type === 'text')
               .map((c: any) => c.text)
               .join('')
-            if (text) {
-              historyMessages.push({ role: 'assistant', content: text })
+
+            const toolCalls = msg.content
+              .filter((c: any) => c.type === 'toolCall')
+              .map((c: any) => ({
+                name: c.name,
+                args: c.arguments
+              }))
+
+            if (text || toolCalls.length > 0) {
+              historyMessages.push({
+                role: 'assistant',
+                content: text,
+                toolCalls: toolCalls.length > 0 ? toolCalls : undefined
+              })
             }
           }
         })
@@ -240,6 +258,7 @@ export function App() {
       const reader = response.body!.getReader()
       const decoder = new TextDecoder()
       let assistantMessage = ''
+      let currentToolCalls: ToolCall[] = []
 
       while (true) {
         const { done, value } = await reader.read()
@@ -261,7 +280,22 @@ export function App() {
                   const newMessages = [...prev]
                   newMessages[newMessages.length - 1] = {
                     role: 'assistant',
-                    content: assistantMessage
+                    content: assistantMessage,
+                    toolCalls: currentToolCalls.length > 0 ? currentToolCalls : undefined
+                  }
+                  return newMessages
+                })
+              } else if (event.type === 'tool_call_start') {
+                currentToolCalls.push({
+                  name: event.toolName,
+                  args: event.args
+                })
+                setMessages(prev => {
+                  const newMessages = [...prev]
+                  newMessages[newMessages.length - 1] = {
+                    role: 'assistant',
+                    content: assistantMessage,
+                    toolCalls: [...currentToolCalls]
                   }
                   return newMessages
                 })
@@ -366,7 +400,12 @@ export function App() {
 
         <div id="messages">
           {messages.map((msg, idx) => (
-            <ChatMessage key={idx} role={msg.role} content={msg.content} />
+            <ChatMessage
+              key={idx}
+              role={msg.role}
+              content={msg.content}
+              toolCalls={msg.toolCalls}
+            />
           ))}
           <div ref={messagesEndRef} />
         </div>

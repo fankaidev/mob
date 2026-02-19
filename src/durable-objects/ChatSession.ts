@@ -474,6 +474,29 @@ Use 'ls /mnt' or list with path="/mnt" to see mounted repositories.
       agent.subscribe(async (event) => {
         eventCount++
 
+        // Send tool execution events
+        if (event.type === 'tool_execution_start') {
+          await writer.write(encoder.encode(
+            `data: ${JSON.stringify({
+              type: 'tool_call_start',
+              toolName: event.toolName,
+              toolCallId: event.toolCallId,
+              args: event.args
+            })}\n\n`
+          ))
+        }
+
+        if (event.type === 'tool_execution_end') {
+          await writer.write(encoder.encode(
+            `data: ${JSON.stringify({
+              type: 'tool_call_end',
+              toolName: event.toolName,
+              toolCallId: event.toolCallId,
+              isError: event.isError
+            })}\n\n`
+          ))
+        }
+
         // Extract text from message updates
         if (event.type === 'message_update' && event.message.role === 'assistant') {
           const content = event.message.content
