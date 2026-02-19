@@ -16,8 +16,8 @@ export function ChatMessage({ role, content, toolCalls }: ChatMessageProps) {
     // Ensure text is a string
     const textStr = typeof text === 'string' ? text : String(text || '')
     return textStr
-      .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
-      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/```([\s\S]*?)```/g, '<pre style="max-width: 100%; overflow-x: auto; white-space: pre-wrap; word-break: break-word;"><code>$1</code></pre>')
+      .replace(/`([^`]+)`/g, '<code style="word-break: break-word;">$1</code>')
       .replace(/\n/g, '<br>')
   }
 
@@ -33,7 +33,11 @@ export function ChatMessage({ role, content, toolCalls }: ChatMessageProps) {
                 padding: '8px',
                 borderRadius: '4px',
                 fontSize: '0.85em',
-                overflow: 'auto'
+                overflow: 'auto',
+                maxWidth: '100%',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                margin: '4px 0'
               }}>
                 {JSON.stringify(toolCall.args, null, 2)}
               </pre>
