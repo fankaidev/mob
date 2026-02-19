@@ -36,8 +36,8 @@
 | **Backend** | Hono, Cloudflare Workers |
 | **状态管理** | Durable Objects |
 | **数据存储** | Cloudflare D1 (SQLite) |
-| **AI** | Anthropic Claude API (流式 + 工具调用) |
-| **集成** | Slack Events API, isomorphic-git |
+| **AI** | pi-mono (流式 + 工具调用) |
+| **集成** | Slack Events API, isomorphic-git, just-bash |
 
 ## 核心功能
 
@@ -80,9 +80,8 @@ Agent 支持以下工具:
 ## 快速开始
 
 ### 环境要求
-- Node.js 18+
-- npm 或 pnpm
-- Cloudflare 账户 (用于 D1 数据库)
+- Cloudflare 账户
+- Wrangler CLI
 
 ### 安装步骤
 
@@ -111,51 +110,15 @@ npm run deploy
 
 ```
 src/
-├── index.ts                    # Worker 入口
-├── types.ts                    # 环境类型定义
-│
-├── client/                     # 前端代码
-│   ├── index.tsx               # React 入口
-│   ├── App.tsx                 # 主应用组件 (会话管理、消息处理)
-│   └── components/
-│       ├── ChatMessage.tsx     # 消息渲染组件
-│       └── SettingsModal.tsx   # 配置管理面板
-│
-├── routes/                     # HTTP 路由
-│   ├── api.ts                  # 会话/消息 API
-│   ├── admin.ts                # LLM/Slack 配置管理
-│   ├── slack.ts                # Slack Events webhook
-│   └── web.tsx                 # HTML Shell
-│
-├── durable-objects/
-│   └── ChatSession.ts          # 会话 DO (Agent 执行、文件系统)
-│
-└── lib/                        # 核心库
-    ├── pi-agent/               # Agent 框架
-    │   ├── agent.ts            # Agent 类 (工具调用循环)
-    │   ├── agent-loop.ts       # 执行循环逻辑
-    │   └── types.ts            # 类型定义
-    │
-    ├── pi-ai/                  # LLM 接口层
-    │   ├── providers/
-    │   │   └── anthropic.ts    # Anthropic SDK 封装
-    │   └── utils/              # 流处理、JSON解析等
-    │
-    ├── fs/                     # 文件系统抽象
-    │   ├── d1-fs.ts            # D1 持久化文件系统
-    │   ├── mountable-fs.ts     # 可挂载文件系统
-    │   ├── git-fs.ts           # Git 克隆存储
-    │   └── mount-store.ts      # 挂载配置持久化
-    │
-    ├── tools/                  # Agent 工具实现
-    │   ├── file-tools.ts       # 文件操作 (read/write/edit/list)
-    │   ├── bash.ts             # Bash 命令执行
-    │   └── mount-tools.ts      # 挂载管理
-    │
-    └── slack/                  # Slack 集成
-        ├── api.ts              # Slack API 客户端
-        ├── signature.ts        # 签名验证
-        └── thread-history.ts   # 线程历史处理
+├── client/           # 前端代码 (React)
+├── routes/           # HTTP 路由 (API, Admin, Slack, Web)
+├── durable-objects/  # Durable Objects (ChatSession)
+└── lib/              # 核心库
+    ├── pi-agent/     # Agent 框架
+    ├── pi-ai/        # LLM 接口层
+    ├── fs/           # 文件系统抽象
+    ├── tools/        # Agent 工具实现
+    └── slack/        # Slack 集成
 ```
 
 ## 数据库模式
