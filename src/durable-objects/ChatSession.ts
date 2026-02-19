@@ -14,7 +14,7 @@ import { restoreMounts } from '../lib/fs/mount-store'
 import { Agent } from '../lib/pi-agent'
 import type { AgentMessage } from '../lib/pi-agent/types'
 import type { Model } from '../lib/pi-ai/types'
-import { createBashTool, createBashContext } from '../lib/tools/bash'
+import { createBashContext as createBashInstance, createBashTool } from '../lib/tools/bash'
 import { createEditTool, createListTool, createReadTool, createWriteTool } from '../lib/tools/file-tools'
 import { createListMountsTool, createMountTool, createUnmountTool } from '../lib/tools/mount-tools'
 
@@ -286,7 +286,7 @@ Use 'ls /mnt' or list with path="/mnt" to see mounted repositories.
       const modelConfig = this.buildModel(baseUrl, model, provider)
 
       // Create shared bash instance for all tools
-      const bash = await createBashContext({
+      const bash = await createBashInstance({
         sessionId: this.sessionId,
         db: this.env.DB,
         fs: this.mountableFs!,
