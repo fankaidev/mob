@@ -2,7 +2,7 @@ import { Type, type Static } from '@sinclair/typebox'
 import type { AgentTool } from '../pi-agent/types'
 import { Bash } from 'just-bash'
 import type { IFileSystem } from '../fs'
-import { gitCommand, ghCommand } from './git-commands'
+import { gitCommand, ghCommand } from './bash-commands'
 
 // ============================================================================
 // Process shim for just-bash (Workers don't have full process object)
