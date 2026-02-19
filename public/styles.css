@@ -337,6 +337,13 @@ button:disabled {
   color: rgba(255,255,255,0.6);
 }
 
+.session-id {
+  font-size: 0.7rem;
+  color: rgba(255,255,255,0.4);
+  font-family: monospace;
+  margin-top: 0.125rem;
+}
+
 .delete-session-btn {
   background: none;
   border: none;

@@ -3,20 +3,20 @@
  */
 
 import { Hono } from 'hono'
-import type { Env } from '../types'
+import type {
+  LLMConfig,
+  SlackAppConfig,
+  SlackEvent,
+  SlackPayload,
+} from '../lib/slack'
 import {
-  verifySlackSignature,
-  SlackClient,
-  truncateForSlack,
   convertSlackToAgentMessages,
   extractUserMessage,
+  SlackClient,
+  truncateForSlack,
+  verifySlackSignature,
 } from '../lib/slack'
-import type {
-  SlackPayload,
-  SlackAppConfig,
-  LLMConfig,
-  SlackEvent,
-} from '../lib/slack'
+import type { Env } from '../types'
 
 const slack = new Hono<Env>()
 
@@ -194,7 +194,8 @@ async function handleSlackMessage(
 
     // Extract user message from event
     const userMessage = extractUserMessage(event.text || '', botUserId || undefined)
-    if (!userMessage) {
+    // Only require a message for new conversations (not replies in threads)
+    if (!userMessage && !event.thread_ts) {
       await client.postMessage(
         channel,
         'Please include a message after mentioning me!',
@@ -215,11 +216,27 @@ async function handleSlackMessage(
     // Check for existing session or create new one
     let sessionId = await getSessionIdFromThreadKey(env.DB, threadKey)
     if (!sessionId) {
-      sessionId = crypto.randomUUID()
+      // Generate session ID in format: slack-YYYYMMDDTHHmmssZ-{random}
+      const now = new Date()
+      const isoString = now.toISOString().replace(/[-:]/g, '').split('.')[0]
+      const random = Math.random().toString(36).slice(2, 10)
+      sessionId = `slack-${isoString}-${random}`
     }
 
     // Get Durable Object
     const doId = env.CHAT_SESSION.idFromName(sessionId)
+
+    // Fail fast: verify id.name is set
+    if (!doId.name) {
+      console.error('idFromName() did not set name:', { sessionId, idString: doId.toString() })
+      await client.postMessage(
+        channel,
+        'Internal error: Failed to create session',
+        threadTs
+      )
+      return
+    }
+
     const stub = env.CHAT_SESSION.get(doId)
 
     // Build request to ChatSession
@@ -233,10 +250,13 @@ async function handleSlackMessage(
       systemPrompt: appConfig.system_prompt || undefined,
     }
 
-    // Call ChatSession
+    // Call ChatSession with session ID in header
     const response = await stub.fetch('http://fake-host/chat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Session-Id': sessionId,
+      },
       body: JSON.stringify(chatRequest),
     })
 

@@ -206,6 +206,39 @@ npx wrangler d1 execute mob-session --local --file=schema.sql
 npx wrangler d1 execute mob-session --remote --file=schema.sql
 ```
 
+## 设计原则
+
+### Fail Fast, Fail Explicitly
+
+本项目遵循"快速失败，明确失败"的原则：
+
+- **不要静默处理异常情况**：当遇到不应该发生的情况时，立即抛出错误而不是尝试修复
+- **不要使用 fallback 隐藏 bug**：如果某个值不符合预期，报错而不是回退到默认值
+- **让问题尽早暴露**：在开发阶段发现并修复问题，而不是在生产环境中出现神秘的行为
+
+**示例**：
+```typescript
+// ❌ 错误：静默处理 ID 不匹配
+if (event.sessionId !== sessionId) {
+  setSessionId(event.sessionId)  // 隐藏了潜在的 bug
+}
+
+// ✅ 正确：立即报错
+if (event.sessionId !== sessionId) {
+  throw new Error(`Session ID mismatch! Expected: ${sessionId}, Got: ${event.sessionId}`)
+}
+```
+
+这个原则帮助我们：
+- 更快地发现和定位 bug
+- 避免数据不一致
+- 保持代码的可预测性
+- 提高系统的可维护性
+
+## 已知问题
+
+- **Durable Object `state.id.name` 问题**：由于 Cloudflare Workers [bug #2240](https://github.com/cloudflare/workerd/issues/2240)，我们通过 HTTP header 传递 session ID 而非依赖 `state.id.name`。详见 [#22](https://github.com/fankaidev/mob/issues/22)
+
 ## License
 
 MIT
