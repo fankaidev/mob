@@ -14,7 +14,7 @@ import { restoreMounts } from '../lib/fs/mount-store'
 import { Agent } from '../lib/pi-agent'
 import type { AgentMessage } from '../lib/pi-agent/types'
 import type { Model } from '../lib/pi-ai/types'
-import { createBashContext as createBashInstance, createBashTool } from '../lib/tools/bash'
+import { createBashInstance, createBashTool } from '../lib/tools/bash'
 import { createEditTool, createListTool, createReadTool, createWriteTool } from '../lib/tools/file-tools'
 import { createListMountsTool, createMountTool, createUnmountTool } from '../lib/tools/mount-tools'
 
