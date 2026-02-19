@@ -83,48 +83,46 @@ api.post('/session/:id/chat', async (c) => {
 api.get('/session/:id/history', async (c) => {
   const sessionId = c.req.param('id')
 
-  // Get Durable Object instance
-  const id = c.env.CHAT_SESSION.idFromName(sessionId)
+  try {
+    // Query messages directly from D1 (no need to go through DO)
+    const result = await c.env.DB.prepare(
+      'SELECT role, content FROM messages WHERE session_id = ? ORDER BY created_at ASC'
+    ).bind(sessionId).all()
 
-  // Fail fast: verify id.name is set
-  if (!id.name) {
-    console.error('idFromName() did not set name:', { sessionId, idString: id.toString() })
-    return c.json({ error: 'Failed to create Durable Object ID with name' }, 500)
+    const messages = result.results.map((row: any) => JSON.parse(row.content))
+
+    return c.json({
+      sessionId,
+      messages,
+    })
+  } catch (error) {
+    console.error('Failed to load history:', error)
+    return c.json({ error: 'Failed to load history' }, 500)
   }
-
-  const stub = c.env.CHAT_SESSION.get(id)
-
-  // Forward request to DO with session ID in header
-  return stub.fetch('http://fake-host/history', {
-    headers: {
-      'X-Session-Id': sessionId,
-    },
-  }) as any
 })
 
 // POST /session/:id/init - Initialize a new session
 api.post('/session/:id/init', async (c) => {
   const sessionId = c.req.param('id')
 
-  // Get Durable Object instance and trigger initialization
-  const id = c.env.CHAT_SESSION.idFromName(sessionId)
+  try {
+    // Create session in D1 if it doesn't exist
+    const session = await c.env.DB.prepare(
+      'SELECT id FROM sessions WHERE id = ?'
+    ).bind(sessionId).first()
 
-  // Fail fast: verify id.name is set
-  if (!id.name) {
-    console.error('idFromName() did not set name:', { sessionId, idString: id.toString() })
-    return c.json({ error: 'Failed to create Durable Object ID with name' }, 500)
+    if (!session) {
+      const now = Date.now()
+      await c.env.DB.prepare(
+        'INSERT INTO sessions (id, created_at, updated_at, status) VALUES (?, ?, ?, ?)'
+      ).bind(sessionId, now, now, 'active').run()
+    }
+
+    return c.json({ success: true })
+  } catch (error) {
+    console.error('Failed to initialize session:', error)
+    return c.json({ error: 'Failed to initialize session' }, 500)
   }
-
-  const stub = c.env.CHAT_SESSION.get(id)
-
-  // Call history to trigger initialization with session ID in header
-  await stub.fetch('http://fake-host/history', {
-    headers: {
-      'X-Session-Id': sessionId,
-    },
-  })
-
-  return c.json({ success: true })
 })
 
 export default api

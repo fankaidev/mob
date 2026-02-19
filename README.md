@@ -235,6 +235,10 @@ if (event.sessionId !== sessionId) {
 - 保持代码的可预测性
 - 提高系统的可维护性
 
+## 已知问题
+
+- **Durable Object `state.id.name` 问题**：由于 Cloudflare Workers [bug #2240](https://github.com/cloudflare/workerd/issues/2240)，我们通过 HTTP header 传递 session ID 而非依赖 `state.id.name`。详见 [#22](https://github.com/fankaidev/mob/issues/22)
+
 ## License
 
 MIT
