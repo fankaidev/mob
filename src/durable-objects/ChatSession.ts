@@ -17,6 +17,7 @@ import type { Model } from '../lib/pi-ai/types'
 import { createBashInstance, createBashTool } from '../lib/tools/bash'
 import { createEditTool, createListTool, createReadTool, createWriteTool } from '../lib/tools/file-tools'
 import { createListMountsTool, createMountTool, createUnmountTool } from '../lib/tools/mount-tools'
+import { createWebFetchTool } from '../lib/tools/web-fetch'
 
 interface Env {
   DB: D1Database
@@ -241,6 +242,12 @@ You have access to the following tools:
 - unmount: Remove the mounted repository
 - list_mounts: List the currently mounted repository
 
+**Web Fetch:**
+- web_fetch: Fetch content from a URL and return it as text
+  - Converts HTML to markdown/text automatically
+  - Supports an optional prompt to describe what to extract
+  - HTTP URLs are automatically upgraded to HTTPS
+
 All file operations work with the shared filesystem. The filesystem starts at /work as the working directory.
 
 **File Persistence:**
@@ -271,7 +278,11 @@ Use 'ls /mnt' or list with path="/mnt" to see mounted repositories.
 4. Modify a file: edit({ path: "/mnt/git/README.md", oldText: "...", newText: "..." })
 5. Stage and commit: bash({ command: "cd /mnt/git && git add . && git commit -m 'Fix typo'" })
 6. Push to remote: bash({ command: "cd /mnt/git && git push" })
-7. Create a PR: bash({ command: "cd /mnt/git && gh pr create --title 'Fix typo' --body 'Fixed a typo in README'" })`
+7. Create a PR: bash({ command: "cd /mnt/git && gh pr create --title 'Fix typo' --body 'Fixed a typo in README'" })
+
+**Workflow example for fetching web content:**
+1. Fetch a webpage: web_fetch({ url: "https://example.com/docs" })
+2. Fetch with extraction prompt: web_fetch({ url: "https://api.example.com/status", prompt: "Extract the current status and any error messages" })`
   }
 
   /**
@@ -323,6 +334,9 @@ Use 'ls /mnt' or list with path="/mnt" to see mounted repositories.
       const unmountTool = createUnmountTool(mountToolOptions)
       const listMountsTool = createListMountsTool(mountToolOptions)
 
+      // Create web fetch tool
+      const webFetchTool = createWebFetchTool()
+
       // Determine which messages to use:
       // - If contextMessages provided (e.g., from Slack thread), use those
       // - Otherwise use stored session messages
@@ -340,7 +354,7 @@ Use 'ls /mnt' or list with path="/mnt" to see mounted repositories.
         initialState: {
           model: modelConfig,
           systemPrompt: finalSystemPrompt,
-          tools: [readTool, writeTool, editTool, listTool, bashTool, mountTool, unmountTool, listMountsTool],
+          tools: [readTool, writeTool, editTool, listTool, bashTool, mountTool, unmountTool, listMountsTool, webFetchTool],
           messages: initialMessages,
         },
         getApiKey: async () => apiKey,
