@@ -17,7 +17,7 @@ import { createReadTool, createWriteTool, createEditTool, createListTool } from 
 import { createMountTool, createUnmountTool, createListMountsTool } from '../lib/tools/mount-tools'
 import { D1FileSystem, MountableFs } from '../lib/fs'
 import { restoreMounts } from '../lib/fs/mount-store'
-import SYSTEM_PROMPT from '../lib/SYSTEM_PROMPT.md?raw'
+import SYSTEM_PROMPT from '../SYSTEM_PROMPT.md?raw'
 
 interface Env {
   DB: D1Database
