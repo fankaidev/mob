@@ -35,7 +35,10 @@ export class ChatSession {
   constructor(state: DurableObjectState, env: Env) {
     this.state = state
     this.env = env
-    this.sessionId = state.id.toString()
+    // Session ID will be set from X-Session-Id header on first request
+    // This is a workaround for CF Workers bug: state.id.name is not available
+    // See: https://github.com/cloudflare/workerd/issues/2240
+    this.sessionId = ''
   }
 
   /**
@@ -140,6 +143,25 @@ export class ChatSession {
    * Handle incoming HTTP requests
    */
   async fetch(request: Request): Promise<Response> {
+    // Extract session ID from X-Session-Id header
+    // Workaround for CF Workers bug: state.id.name is not available
+    // See: https://github.com/cloudflare/workerd/issues/2240
+    const sessionIdFromHeader = request.headers.get('X-Session-Id')
+    if (!sessionIdFromHeader) {
+      return new Response(JSON.stringify({ error: 'X-Session-Id header is required' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    }
+
+    // Set session ID if not already set, or verify it matches
+    if (!this.sessionId) {
+      this.sessionId = sessionIdFromHeader
+    } else if (this.sessionId !== sessionIdFromHeader) {
+      // Fail fast: session ID mismatch
+      throw new Error(`Session ID mismatch! DO has: ${this.sessionId}, Request has: ${sessionIdFromHeader}`)
+    }
+
     await this.initialize()
 
     const url = new URL(request.url)

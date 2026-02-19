@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { ChatMessage } from './components/ChatMessage'
 import { SettingsModal } from './components/SettingsModal'
 
@@ -18,6 +18,7 @@ interface Session {
   created_at: number
   updated_at: number
   status: string
+  first_user_message?: string
 }
 
 interface LLMConfig {
@@ -50,7 +51,11 @@ export function App() {
   useEffect(() => {
     let sid = localStorage.getItem('mob-session-id')
     if (!sid) {
-      sid = crypto.randomUUID()
+      // Generate session ID in format: web-YYYYMMDDTHHmmssZ-{random}
+      const now = new Date()
+      const isoString = now.toISOString().replace(/[-:]/g, '').split('.')[0]
+      const random = Math.random().toString(36).slice(2, 10)
+      sid = `web-${isoString}-${random}`
       localStorage.setItem('mob-session-id', sid)
     }
     setSessionId(sid)
@@ -103,9 +108,11 @@ export function App() {
 
   const loadHistory = async (sid: string) => {
     try {
+      console.log('Loading history for session:', sid)
       const response = await fetch(`/api/session/${sid}/history`)
       if (response.ok) {
         const data = await response.json() as { messages: any[] }
+        console.log('History response:', { messageCount: data.messages.length })
         const historyMessages: Message[] = []
 
         data.messages.forEach((msg: any) => {
@@ -151,9 +158,13 @@ export function App() {
     }
   }
 
-  const createNewSession = () => {
-    const newSessionId = crypto.randomUUID()
-    const now = Date.now()
+  const createNewSession = async () => {
+    // Generate session ID in format: YYYYMMDDTHHmmssZ-{random}
+    const now = new Date()
+    const isoString = now.toISOString().replace(/[-:]/g, '').split('.')[0]
+    const random = Math.random().toString(36).slice(2, 10)
+    const newSessionId = `web-${isoString}-${random}`
+    const timestamp = now.getTime()
 
     localStorage.setItem('mob-session-id', newSessionId)
     setSessionId(newSessionId)
@@ -161,18 +172,28 @@ export function App() {
 
     const newSession: Session = {
       id: newSessionId,
-      created_at: now,
-      updated_at: now,
+      created_at: timestamp,
+      updated_at: timestamp,
       status: 'active'
     }
     setSessions([newSession, ...sessions])
+
+    // Persist session to database by initializing the DO
+    try {
+      await fetch(`/api/session/${newSessionId}/init`, { method: 'POST' })
+    } catch (error) {
+      console.error('Failed to initialize session:', error)
+    }
   }
 
   const switchSession = (sid: string) => {
     localStorage.setItem('mob-session-id', sid)
     setSessionId(sid)
     loadHistory(sid)
-    setIsSidebarOpen(false)
+    // Only close sidebar on mobile (screen width < 769px)
+    if (window.innerWidth < 769) {
+      setIsSidebarOpen(false)
+    }
   }
 
   const deleteSession = async (sid: string, e: React.MouseEvent) => {
@@ -274,7 +295,14 @@ export function App() {
 
             try {
               const event = JSON.parse(data)
-              if (event.type === 'text') {
+              if (event.type === 'session_id') {
+                // Verify session ID matches
+                if (event.sessionId && event.sessionId !== sessionId) {
+                  const error = `Session ID mismatch! Expected: ${sessionId}, Got: ${event.sessionId}`
+                  console.error(error)
+                  throw new Error(error)
+                }
+              } else if (event.type === 'text') {
                 assistantMessage += event.text
                 setMessages(prev => {
                   const newMessages = [...prev]
@@ -361,10 +389,24 @@ export function App() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div className="session-name">
-                      {session.id.slice(0, 8)}...
+                      {(() => {
+                        if (!session.first_user_message) {
+                          return 'no message'
+                        }
+                        try {
+                          const msg = JSON.parse(session.first_user_message)
+                          const textContent = msg.content?.find((c: any) => c.type === 'text')?.text || ''
+                          return textContent.slice(0, 12) || 'empty message'
+                        } catch {
+                          return session.first_user_message
+                        }
+                      })()}
                     </div>
                     <div className="session-date">
                       {formatDateTime(session.updated_at)}
+                    </div>
+                    <div className="session-id">
+                      {session.id}
                     </div>
                   </div>
                   <button
