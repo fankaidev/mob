@@ -157,6 +157,38 @@ export class ChatSession {
         })
       }
 
+      // Check if message starts with '!' - direct bash execution
+      const trimmedMessage = message.trim()
+      if (trimmedMessage.startsWith('!')) {
+        const command = trimmedMessage.slice(1).trim()
+        if (!command) {
+          return new Response(JSON.stringify({ error: 'Command is required after !' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' }
+          })
+        }
+
+        // Create SSE stream for bash output
+        const { readable, writable } = new TransformStream()
+        const writer = writable.getWriter()
+        const encoder = new TextEncoder()
+
+        // Handle bash execution in background
+        this.handleBashCommand(command, writer, encoder).catch((error) => {
+          console.error('Bash error:', error)
+          writer.write(encoder.encode(`data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`))
+          writer.close()
+        })
+
+        return new Response(readable, {
+          headers: {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+          },
+        })
+      }
+
       if (!apiKey) {
         return new Response(JSON.stringify({ error: 'API key is required' }), {
           status: 400,
@@ -258,6 +290,80 @@ Use 'ls /mnt' or list with path="/mnt" to see mounted repositories.
 5. Stage and commit: bash({ command: "cd /mnt/git && git add . && git commit -m 'Fix typo'" })
 6. Push to remote: bash({ command: "cd /mnt/git && git push" })
 7. Create a PR: bash({ command: "cd /mnt/git && gh pr create --title 'Fix typo' --body 'Fixed a typo in README'" })`
+  }
+
+  /**
+   * Handle direct bash command execution (for messages starting with '!')
+   */
+  private async handleBashCommand(
+    command: string,
+    writer: WritableStreamDefaultWriter,
+    encoder: TextEncoder
+  ) {
+    try {
+      // Send session ID
+      await writer.write(encoder.encode(
+        `data: ${JSON.stringify({ type: 'session_id', sessionId: this.sessionId })}\n\n`
+      ))
+
+      // Create bash instance
+      const bash = await createBashInstance({
+        sessionId: this.sessionId,
+        db: this.env.DB,
+        fs: this.mountableFs!,
+      })
+
+      // Execute command
+      const result = await bash.exec(command)
+      const output = [result.stdout, result.stderr].filter(Boolean).join('\n') || '(no output)'
+
+      // Format output as code block
+      const formattedOutput = '```\n' + output + '\n```'
+
+      // Stream the output
+      await writer.write(encoder.encode(
+        `data: ${JSON.stringify({ type: 'text', text: formattedOutput })}\n\n`
+      ))
+
+      // Create user message for the command
+      const userMessage: AgentMessage = {
+        role: 'user',
+        content: [{ type: 'text', text: `! ${command}` }],
+      }
+
+      // Create assistant message for the result
+      const assistantMessage: AgentMessage = {
+        role: 'assistant',
+        content: [{ type: 'text', text: formattedOutput }],
+      }
+
+      // Add to messages
+      this.messages.push(userMessage, assistantMessage)
+
+      // Save to D1
+      await this.env.DB.batch([
+        this.env.DB.prepare('DELETE FROM messages WHERE session_id = ?').bind(this.sessionId),
+        ...this.messages.map(msg =>
+          this.env.DB.prepare(
+            'INSERT INTO messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)'
+          ).bind(this.sessionId, msg.role, JSON.stringify(msg), Date.now())
+        ),
+        this.env.DB.prepare('UPDATE sessions SET updated_at = ? WHERE id = ?')
+          .bind(Date.now(), this.sessionId),
+      ])
+
+      // Send done signal
+      await writer.write(encoder.encode('data: [DONE]\n\n'))
+      await writer.close()
+
+    } catch (error) {
+      console.error('Bash error:', error)
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      await writer.write(encoder.encode(
+        `data: ${JSON.stringify({ type: 'error', error: errorMessage })}\n\n`
+      ))
+      await writer.close()
+    }
   }
 
   /**
