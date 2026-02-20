@@ -583,10 +583,17 @@ export class ChatSession {
       // Update in-memory messages: keep old + add processed new messages
       this.messages = [...initialMessages, ...newMessages]
 
-      // Save only new messages to D1 (avoid DELETE to prevent data loss in concurrent scenarios)
+      // Determine which messages to save:
+      // - If using contextMessages (e.g., first Slack reply), save context + new messages
+      // - Otherwise, only save new messages
+      const messagesToSave = contextMessages && contextMessages.length > 0
+        ? [...contextMessages, ...newMessages]  // Save context + new (first time in thread)
+        : newMessages  // Only save new (subsequent messages)
+
+      // Save messages to D1
       await this.env.DB.batch([
-        // Insert only new messages (prefix is included in the JSON content)
-        ...newMessages.map(msg =>
+        // Insert messages (prefix is included in the JSON content)
+        ...messagesToSave.map(msg =>
           this.env.DB.prepare(
             'INSERT INTO messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)'
           ).bind(this.sessionId, msg.role, JSON.stringify(msg), Date.now())
