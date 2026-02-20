@@ -43,9 +43,13 @@ export function convertSlackToAgentMessages(
         return null
       }
 
-      // Prepend user name for user messages
+      // Prepend name prefix to distinguish different speakers
       if (!isBot && msg.user_name) {
+        // User messages get [user:name] prefix
         text = `[user:${msg.user_name}] ${text}`
+      } else if (isBot && msg.bot_name) {
+        // Bot messages get [bot:name] prefix to distinguish different bots
+        text = `[bot:${msg.bot_name}] ${text}`
       }
 
       return {

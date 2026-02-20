@@ -191,11 +191,11 @@ async function getUserInfo(
 
 /**
  * Generate thread key from Slack event
- * Format: slack:{app_id}:{channel}:{thread_ts}
+ * Format: slack:{channel}:{thread_ts}
  */
-function getThreadKey(appId: string, event: SlackEvent): string {
+function getThreadKey(event: SlackEvent): string {
   const threadTs = event.thread_ts || event.ts
-  return `slack:${appId}:${event.channel}:${threadTs}`
+  return `slack:${event.channel}:${threadTs}`
 }
 
 // ============================================================================
@@ -249,7 +249,7 @@ async function handleSlackMessage(
   const client = new SlackClient(appConfig.bot_token)
   const channel = event.channel!
   const threadTs = event.thread_ts || event.ts!
-  const threadKey = getThreadKey(appConfig.app_id, event)
+  const threadKey = getThreadKey(event)
 
   console.log('handleSlackMessage', event)
 
@@ -297,10 +297,14 @@ async function handleSlackMessage(
     if (event.thread_ts) {
       const threadMessages = await client.getThreadReplies(channel, event.thread_ts)
 
-      // Enrich messages with user names
+      console.log('threadMessages', threadMessages)
+
+      // Enrich messages with user names and bot names
       for (const msg of threadMessages) {
         if (msg.user && !msg.bot_id && msg.user !== botUserId) {
           msg.user_name = await getUserInfo(env.DB, client, appConfig.app_id, msg.user)
+        } else if (msg.bot_id) {
+          msg.bot_name = appConfig.llm_config_name
         }
       }
 

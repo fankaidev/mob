@@ -37,6 +37,7 @@ export interface SlackMessage {
   user?: string
   user_name?: string  // User display name (enriched from cache)
   bot_id?: string
+  bot_name?: string  // Bot display name (enriched from cache)
   text: string
   ts: string
   thread_ts?: string
