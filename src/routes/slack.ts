@@ -292,9 +292,12 @@ async function handleSlackMessage(
       userMessage = `[user:${userName}] ${userMessage}`
     }
 
-    // Get thread history if this is a reply in a thread
+    // For new sessions, get thread history to initialize context
+    // For existing sessions, ChatSession DO will load history from its own storage
     let contextMessages: any[] = []
-    if (event.thread_ts) {
+    const existingSessionId = await getSessionIdFromThreadKey(env.DB, threadKey)
+    if (!existingSessionId && event.thread_ts) {
+      // Only fetch history for NEW sessions in existing threads
       const threadMessages = await client.getThreadReplies(channel, event.thread_ts)
 
       // Enrich messages with user names
@@ -304,13 +307,14 @@ async function handleSlackMessage(
         }
       }
 
-      // Exclude the current message (last one) since we'll add it separately
-      const historyMessages = threadMessages.slice(0, -1)
+      // Exclude the current message by matching timestamp
+      // Don't use slice(0, -1) as the current message might not be the last one
+      const historyMessages = threadMessages.filter(msg => msg.ts !== event.ts)
       contextMessages = convertSlackToAgentMessages(historyMessages, botUserId || undefined)
     }
 
-    // Check for existing session or create new one
-    let sessionId = await getSessionIdFromThreadKey(env.DB, threadKey)
+    // Use existing session ID or the one we already checked
+    let sessionId = existingSessionId
     if (!sessionId) {
       // Generate session ID in format: slack-YYYYMMDDTHHmmssZ-{random}
       sessionId = generateSessionId('slack')
