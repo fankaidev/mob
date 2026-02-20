@@ -558,10 +558,18 @@ export class ChatSession {
       // Update in-memory messages and add prefix to new assistant messages
       this.messages = agent.state.messages.map((msg) => {
         const cloned = JSON.parse(JSON.stringify(msg))
+
         // Add assistantPrefix to assistant messages that don't have a prefix yet
         if (assistantPrefix && msg.role === 'assistant' && !cloned.prefix) {
           cloned.prefix = assistantPrefix
         }
+
+        // Remove any [bot:xxx] or [user:xxx] prefix from the beginning of text content
+        // This handles cases where LLM mistakenly includes the prefix in its response
+        if (cloned.content?.[0]?.type === 'text' && typeof cloned.content[0].text === 'string') {
+          cloned.content[0].text = cloned.content[0].text.replace(/^\s*\[(bot|user):[^\]]+\]\s*/, '')
+        }
+
         return cloned
       })
 
