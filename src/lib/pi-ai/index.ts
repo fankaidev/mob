@@ -12,5 +12,4 @@ export * from "./types";
 export * from "./utils/event-stream";
 export * from "./utils/json-parse";
 export * from "./utils/sanitize-unicode";
-export * from "./utils/typebox-helpers";
 export * from "./utils/validation";
