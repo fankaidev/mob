@@ -52,7 +52,6 @@ export class ChatSession {
     const session = await this.env.DB.prepare(
       'SELECT * FROM sessions WHERE id = ?'
     ).bind(this.sessionId).first()
-    console.log(`[Perf] Session query: ${Date.now() - startTime}ms`)
 
     if (!session) {
       // Create new session
@@ -68,7 +67,6 @@ export class ChatSession {
       const result = await this.env.DB.prepare(
         'SELECT role, content FROM messages WHERE session_id = ? ORDER BY created_at ASC'
       ).bind(this.sessionId).all()
-      console.log(`[Perf] Messages query: ${Date.now() - msgStart}ms, count: ${result.results.length}`)
 
       this.messages = result.results.map((row: any) => JSON.parse(row.content))
     }
@@ -102,7 +100,7 @@ export class ChatSession {
 
     const dirStart = Date.now()
     await baseFs.initializeDefaultDirectories()
-    console.log(`[Perf] Initialize directories: ${Date.now() - dirStart}ms`)
+    // console.log(`[Perf] Initialize directories: ${Date.now() - dirStart}ms`)
 
     this.mountableFs = new MountableFs({ base: baseFs })
 
@@ -116,7 +114,7 @@ export class ChatSession {
     // Restore persisted mounts
     const mountStart = Date.now()
     await restoreMounts(this.env.DB, this.sessionId, this.mountableFs)
-    console.log(`[Perf] Restore mounts: ${Date.now() - mountStart}ms`)
+    // console.log(`[Perf] Restore mounts: ${Date.now() - mountStart}ms`)
 
     console.log(`[Perf] Total filesystem init: ${Date.now() - startTime}ms`)
   }

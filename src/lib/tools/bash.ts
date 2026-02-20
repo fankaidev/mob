@@ -78,7 +78,6 @@ export async function createBashInstance(options: BashToolOptions): Promise<Bash
     },
     python: true,
   })
-  console.log(`Created bash instance with external filesystem`)
 
   return bashInstance
 }
