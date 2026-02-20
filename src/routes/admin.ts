@@ -27,13 +27,13 @@ admin.get('/llm-configs', async (c) => {
   }
 })
 
-// GET /admin/llm-configs/:name - Get a single LLM config
+// GET /admin/llm-configs/:name - Get a single LLM config (excludes api_key for security)
 admin.get('/llm-configs/:name', async (c) => {
   try {
     const name = c.req.param('name')
     const result = await c.env.DB.prepare(
-      'SELECT * FROM llm_configs WHERE name = ?'
-    ).bind(name).first<LLMConfig>()
+      'SELECT name, provider, base_url, model, created_at, updated_at FROM llm_configs WHERE name = ?'
+    ).bind(name).first<Omit<LLMConfig, 'api_key'>>()
 
     if (!result) {
       return c.json({ error: 'Config not found' }, 404)
@@ -184,13 +184,15 @@ admin.get('/slack-apps', async (c) => {
   }
 })
 
-// GET /admin/slack-apps/:appId - Get a single Slack app
+// GET /admin/slack-apps/:appId - Get a single Slack app (excludes sensitive fields for security)
 admin.get('/slack-apps/:appId', async (c) => {
   try {
     const appId = c.req.param('appId')
     const result = await c.env.DB.prepare(
-      'SELECT * FROM slack_apps WHERE app_id = ?'
-    ).bind(appId).first<SlackAppConfig>()
+      `SELECT id, app_id, team_id, app_name, bot_user_id, llm_config_name, system_prompt,
+              created_at, updated_at
+       FROM slack_apps WHERE app_id = ?`
+    ).bind(appId).first<Omit<SlackAppConfig, 'bot_token' | 'signing_secret'>>()
 
     if (!result) {
       return c.json({ error: 'Slack app not found' }, 404)
