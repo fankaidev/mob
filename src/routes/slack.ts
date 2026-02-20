@@ -336,7 +336,9 @@ async function handleSlackMessage(
 
         // Convert user messages to context (exclude current message)
         const historyMessages = threadMessages.slice(0, -1)
+        console.log('Thread history messages:', historyMessages.length, historyMessages.map(m => ({ user: m.user, text: m.text?.substring(0, 50) })))
         contextMessages = convertSlackToAgentMessages(historyMessages, botUserId || undefined)
+        console.log('Converted context messages:', contextMessages.length, contextMessages.map(m => ({ role: m.role, text: m.content[0]?.type === 'text' ? m.content[0].text?.substring(0, 50) : '' })))
       }
     }
 
