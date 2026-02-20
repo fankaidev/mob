@@ -478,6 +478,9 @@ export class ChatSession {
         ? contextMessages
         : this.messages
 
+      // Track the number of messages before agent.prompt() to identify new messages
+      const oldMessageCount = initialMessages.length
+
       // Build final system prompt: default + optional custom prompt appended
       const defaultPrompt = this.getDefaultSystemPrompt()
       const finalSystemPrompt = systemPrompt
@@ -555,8 +558,9 @@ export class ChatSession {
       // Run agent with AgentMessage
       await agent.prompt(message)
 
-      // Update in-memory messages and add prefix to new assistant messages
-      this.messages = agent.state.messages.map((msg) => {
+      // Process only new messages (from oldMessageCount onwards)
+      const allMessages = agent.state.messages
+      const newMessages = allMessages.slice(oldMessageCount).map((msg) => {
         const cloned = JSON.parse(JSON.stringify(msg))
 
         // Add assistantPrefix to assistant messages that don't have a prefix yet
@@ -573,14 +577,13 @@ export class ChatSession {
         return cloned
       })
 
-      // Save new messages to D1 (only new ones after the prompt)
-      // Note: We save all messages to keep it simple
-      // In production, you'd want to only save the delta
+      // Update in-memory messages: keep old + add processed new messages
+      this.messages = [...initialMessages, ...newMessages]
+
+      // Save only new messages to D1 (avoid DELETE to prevent data loss in concurrent scenarios)
       await this.env.DB.batch([
-        // Clear old messages
-        this.env.DB.prepare('DELETE FROM messages WHERE session_id = ?').bind(this.sessionId),
-        // Insert all current messages (prefix is included in the JSON content)
-        ...this.messages.map(msg =>
+        // Insert only new messages (prefix is included in the JSON content)
+        ...newMessages.map(msg =>
           this.env.DB.prepare(
             'INSERT INTO messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)'
           ).bind(this.sessionId, msg.role, JSON.stringify(msg), Date.now())
