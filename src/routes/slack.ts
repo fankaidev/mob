@@ -348,7 +348,7 @@ async function handleSlackMessage(
       llmConfigName: appConfig.llm_config_name,  // Pass config name instead of credentials
       contextMessages: contextMessages.length > 0 ? contextMessages : undefined,
       systemPrompt: appConfig.system_prompt || undefined,
-      assistantPrefix: `bot:${appConfig.app_name}`,  // Add prefix for bot responses
+      assistantPrefix: `bot:${appConfig.llm_config_name}`,  // Add prefix for bot responses
     }
 
     // Call ChatSession with session ID in header
