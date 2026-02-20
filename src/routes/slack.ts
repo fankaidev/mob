@@ -301,45 +301,37 @@ async function handleSlackMessage(
     // Check for existing session
     let sessionId = await getSessionIdFromThreadKey(env.DB, threadKey)
 
-    // Get thread history
+    // Get thread history (only for new sessions)
     let contextMessages: any[] = []
-    if (event.thread_ts) {
-      if (sessionId) {
-        // Load from database (preserves correct bot prefixes)
-        const result = await env.DB.prepare(
-          'SELECT content FROM messages WHERE session_id = ? ORDER BY created_at ASC'
-        ).bind(sessionId).all()
+    if (event.thread_ts && !sessionId) {
+      // Only load context for new sessions
+      // Existing sessions will use this.messages (loaded from DB in ChatSession.initialize())
+      const threadMessages = await client.getThreadReplies(channel, event.thread_ts)
+      const hasBotMessages = threadMessages.some(msg => msg.bot_id)
 
-        contextMessages = result.results.map((row: any) => JSON.parse(row.content))
-      } else {
-        // No session yet - check if thread has bot messages
-        const threadMessages = await client.getThreadReplies(channel, event.thread_ts)
-        const hasBotMessages = threadMessages.some(msg => msg.bot_id)
-
-        if (hasBotMessages) {
-          // Error: bot messages exist but no session found
-          await client.postMessage(
-            channel,
-            'Error: Thread state inconsistent. Please start a new conversation.',
-            threadTs
-          )
-          return
-        }
-
-        // No bot messages yet - this is first bot reply in thread
-        // Enrich user messages with names
-        for (const msg of threadMessages) {
-          if (msg.user && !msg.bot_id && msg.user !== botUserId) {
-            msg.user_name = await getUserInfo(env.DB, client, appConfig.app_id, msg.user)
-          }
-        }
-
-        // Convert user messages to context (exclude current message)
-        const historyMessages = threadMessages.slice(0, -1)
-        console.log('Thread history messages:', historyMessages.length, historyMessages.map(m => ({ user: m.user, text: m.text?.substring(0, 50) })))
-        contextMessages = convertSlackToAgentMessages(historyMessages, botUserId || undefined)
-        console.log('Converted context messages:', contextMessages.length, contextMessages.map(m => ({ role: m.role, text: m.content[0]?.type === 'text' ? m.content[0].text?.substring(0, 50) : '' })))
+      if (hasBotMessages) {
+        // Error: bot messages exist but no session found
+        await client.postMessage(
+          channel,
+          'Error: Thread state inconsistent. Please start a new conversation.',
+          threadTs
+        )
+        return
       }
+
+      // No bot messages yet - this is first bot reply in thread
+      // Enrich user messages with names
+      for (const msg of threadMessages) {
+        if (msg.user && !msg.bot_id && msg.user !== botUserId) {
+          msg.user_name = await getUserInfo(env.DB, client, appConfig.app_id, msg.user)
+        }
+      }
+
+      // Convert user messages to context (exclude current message)
+      const historyMessages = threadMessages.slice(0, -1)
+      console.log('Thread history messages:', historyMessages.length, historyMessages.map(m => ({ user: m.user, text: m.text?.substring(0, 50) })))
+      contextMessages = convertSlackToAgentMessages(historyMessages, botUserId || undefined)
+      console.log('Converted context messages:', contextMessages.length, contextMessages.map(m => ({ role: m.role, text: m.content[0]?.type === 'text' ? m.content[0].text?.substring(0, 50) : '' })))
     }
 
     // Create new session if not exists
