@@ -63,7 +63,7 @@ export class ChatSession {
 
       this.messages = []
     } else {
-      // Load existing messages
+      // Load existing messages (prefix is included in the JSON content)
       const msgStart = Date.now()
       const result = await this.env.DB.prepare(
         'SELECT role, content FROM messages WHERE session_id = ? ORDER BY created_at ASC'
@@ -198,17 +198,37 @@ export class ChatSession {
 
     // POST /chat - Send message and get streaming response
     if (request.method === 'POST' && url.pathname === '/chat') {
-      const { message, baseUrl, apiKey, model, provider, contextMessages, systemPrompt } = await request.json() as {
-        message: string
-        baseUrl: string
-        apiKey: string
-        model: string
-        provider: string
+      const { message, llmConfigName, contextMessages, systemPrompt, assistantPrefix } = await request.json() as {
+        message: AgentMessage  // Only accept AgentMessage format
+        llmConfigName: string  // LLM config name (query from database)
         contextMessages?: AgentMessage[]
         systemPrompt?: string
+        assistantPrefix?: string  // Optional prefix for assistant messages (e.g., "bot:AppName")
       }
 
-      if (!message?.trim()) {
+      // Query LLM config from database
+      const llmConfig = await this.env.DB.prepare(
+        'SELECT * FROM llm_configs WHERE name = ?'
+      ).bind(llmConfigName).first() as any
+
+      if (!llmConfig) {
+        return new Response(JSON.stringify({ error: `LLM config not found: ${llmConfigName}` }), {
+          status: 404,
+          headers: { 'Content-Type': 'application/json' }
+        })
+      }
+
+      const { base_url: baseUrl, api_key: apiKey, model, provider } = llmConfig
+
+      // Extract text from message for validation and bash command check
+      const messageText = typeof message.content === 'string'
+        ? message.content
+        : (message.content?.[0] && typeof message.content[0] !== 'string' && message.content[0].type === 'text'
+            ? message.content[0].text
+            : '')
+
+      // Validate message
+      if (!messageText.trim()) {
         return new Response(JSON.stringify({ error: 'Message is required' }), {
           status: 400,
           headers: { 'Content-Type': 'application/json' }
@@ -216,7 +236,7 @@ export class ChatSession {
       }
 
       // Check if message starts with '!' - direct bash execution
-      const trimmedMessage = message.trim()
+      const trimmedMessage = messageText.trim()
       if (trimmedMessage.startsWith('!')) {
         const command = trimmedMessage.slice(1).trim()
         if (!command) {
@@ -274,7 +294,7 @@ export class ChatSession {
       const encoder = new TextEncoder()
 
       // Handle chat in background
-      this.handleChat(message, baseUrl, apiKey, model, provider, writer, encoder, contextMessages, systemPrompt).catch((error) => {
+      this.handleChat(message, baseUrl, apiKey, model, provider, writer, encoder, contextMessages, systemPrompt, assistantPrefix).catch((error) => {
         console.error('Chat error:', error)
         writer.write(encoder.encode(`data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`))
         writer.close()
@@ -339,13 +359,15 @@ export class ChatSession {
       const userMessage: AgentMessage = {
         role: 'user',
         content: [{ type: 'text', text: `! ${command}` }],
+        timestamp: Date.now()
       }
 
-      // Create assistant message for the result
-      const assistantMessage: AgentMessage = {
-        role: 'assistant',
-        content: [{ type: 'text', text: formattedOutput }],
-      }
+      // Create assistant message for the result (using type assertion since these are simple bash outputs)
+      const assistantMessage = {
+        role: 'assistant' as const,
+        content: [{ type: 'text' as const, text: formattedOutput }],
+        timestamp: Date.now()
+      } as AgentMessage
 
       // Add to messages
       this.messages.push(userMessage, assistantMessage)
@@ -377,12 +399,29 @@ export class ChatSession {
   }
 
   /**
+   * Add prefix to message text (temporary, for LLM context only)
+   * Does not modify the original message object
+   */
+  private addPrefixToMessages(messages: AgentMessage[]): AgentMessage[] {
+    return messages.map(msg => {
+      if (!msg.prefix) return msg
+
+      const cloned = JSON.parse(JSON.stringify(msg))
+      if (cloned.content?.[0]?.type === 'text') {
+        cloned.content[0].text = `[${msg.prefix}] ${cloned.content[0].text}`
+      }
+      return cloned
+    })
+  }
+
+  /**
    * Handle chat message with streaming
    * @param contextMessages - Optional messages from external context (e.g., Slack thread history)
    * @param systemPrompt - Optional custom system prompt
+   * @param assistantPrefix - Optional prefix for new assistant messages (e.g., "bot:AppName")
    */
   private async handleChat(
-    message: string,
+    message: AgentMessage,  // Only accept AgentMessage format
     baseUrl: string,
     apiKey: string,
     model: string,
@@ -390,7 +429,8 @@ export class ChatSession {
     writer: WritableStreamDefaultWriter,
     encoder: TextEncoder,
     contextMessages?: AgentMessage[],
-    systemPrompt?: string
+    systemPrompt?: string,
+    assistantPrefix?: string
   ) {
     try {
       // Initialize filesystem for chat (with tools)
@@ -449,7 +489,11 @@ export class ChatSession {
           model: modelConfig,
           systemPrompt: finalSystemPrompt,
           tools: [readTool, writeTool, editTool, listTool, bashTool, mountTool, unmountTool, listMountsTool, webFetchTool],
-          messages: initialMessages,
+          messages: initialMessages,  // Store clean messages without prefix
+        },
+        // Add prefix only when converting to LLM format (temporary, not stored in agent state)
+        convertToLlm: async (messages) => {
+          return this.addPrefixToMessages(messages)
         },
         getApiKey: async () => apiKey,
       })
@@ -508,13 +552,18 @@ export class ChatSession {
         }
       })
 
-      // Run agent
+      // Run agent with AgentMessage
       await agent.prompt(message)
 
-      // Update in-memory messages
-      this.messages = agent.state.messages.map((msg) =>
-        JSON.parse(JSON.stringify(msg))
-      )
+      // Update in-memory messages and add prefix to new assistant messages
+      this.messages = agent.state.messages.map((msg) => {
+        const cloned = JSON.parse(JSON.stringify(msg))
+        // Add assistantPrefix to assistant messages that don't have a prefix yet
+        if (assistantPrefix && msg.role === 'assistant' && !cloned.prefix) {
+          cloned.prefix = assistantPrefix
+        }
+        return cloned
+      })
 
       // Save new messages to D1 (only new ones after the prompt)
       // Note: We save all messages to keep it simple
@@ -522,7 +571,7 @@ export class ChatSession {
       await this.env.DB.batch([
         // Clear old messages
         this.env.DB.prepare('DELETE FROM messages WHERE session_id = ?').bind(this.sessionId),
-        // Insert all current messages
+        // Insert all current messages (prefix is included in the JSON content)
         ...this.messages.map(msg =>
           this.env.DB.prepare(
             'INSERT INTO messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)'

@@ -286,10 +286,16 @@ async function handleSlackMessage(
       return
     }
 
-    // Prepend user name to the current message
-    if (userMessage && event.user) {
+    // Construct current user message with prefix
+    let currentUserMessage: any = {
+      role: 'user',
+      content: [{ type: 'text', text: userMessage }],
+      timestamp: Date.now()
+    }
+
+    if (event.user) {
       const userName = await getUserInfo(env.DB, client, appConfig.app_id, event.user)
-      userMessage = `[user:${userName}] ${userMessage}`
+      currentUserMessage.prefix = `user:${userName}`
     }
 
     // Get thread history if this is a reply in a thread
@@ -338,13 +344,11 @@ async function handleSlackMessage(
 
     // Build request to ChatSession
     const chatRequest = {
-      message: userMessage,
-      baseUrl: llmConfig.base_url,
-      apiKey: llmConfig.api_key,
-      model: llmConfig.model,
-      provider: llmConfig.provider,
+      message: currentUserMessage,
+      llmConfigName: appConfig.llm_config_name,  // Pass config name instead of credentials
       contextMessages: contextMessages.length > 0 ? contextMessages : undefined,
       systemPrompt: appConfig.system_prompt || undefined,
+      assistantPrefix: `bot:${appConfig.app_name}`,  // Add prefix for bot responses
     }
 
     // Call ChatSession with session ID in header

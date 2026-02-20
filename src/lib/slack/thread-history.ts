@@ -43,19 +43,22 @@ export function convertSlackToAgentMessages(
         return null
       }
 
-      // Prepend name prefix to distinguish different speakers
-      if (!isBot && msg.user_name) {
-        // User messages get [user:name] prefix
-        text = `[user:${msg.user_name}] ${text}`
-      } else if (isBot && msg.bot_name) {
-        // Bot messages get [bot:name] prefix to distinguish different bots
-        text = `[bot:${msg.bot_name}] ${text}`
+      // Create message with prefix field (not in text)
+      const message = {
+        role: isBot ? ('assistant' as const) : ('user' as const),
+        content: [{ type: 'text' as const, text }],
+        timestamp: Date.now(),
+        prefix: undefined as string | undefined
       }
 
-      return {
-        role: isBot ? 'assistant' : 'user',
-        content: [{ type: 'text' as const, text }],
-      } as AgentMessage
+      // Add prefix field to distinguish different speakers
+      if (!isBot && msg.user_name) {
+        message.prefix = `user:${msg.user_name}`
+      } else if (isBot && msg.bot_name) {
+        message.prefix = `bot:${msg.bot_name}`
+      }
+
+      return message as AgentMessage
     })
     .filter((msg): msg is AgentMessage => msg !== null)
 }

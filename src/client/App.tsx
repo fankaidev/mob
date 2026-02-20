@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
+import { generateSessionId } from '../lib/utils'
 import { ChatMessage } from './components/ChatMessage'
 import { SettingsModal } from './components/SettingsModal'
-import { generateSessionId } from '../lib/utils'
 
 interface ToolCall {
   name: string
@@ -12,6 +12,7 @@ interface Message {
   role: 'user' | 'assistant'
   content: string
   toolCalls?: ToolCall[]
+  prefix?: string  // Optional speaker prefix (e.g., "user:Kai", "bot:AppName")
 }
 
 interface Session {
@@ -121,10 +122,18 @@ export function App() {
                 .map((c: any) => c.text)
                 .join('')
               if (text) {
-                historyMessages.push({ role: 'user', content: text })
+                historyMessages.push({
+                  role: 'user',
+                  content: text,
+                  prefix: msg.prefix  // Include prefix if available
+                })
               }
             } else if (typeof msg.content === 'string') {
-              historyMessages.push({ role: 'user', content: msg.content })
+              historyMessages.push({
+                role: 'user',
+                content: msg.content,
+                prefix: msg.prefix
+              })
             }
           } else if (msg.role === 'assistant' && Array.isArray(msg.content)) {
             const text = msg.content
@@ -143,7 +152,8 @@ export function App() {
               historyMessages.push({
                 role: 'assistant',
                 content: text,
-                toolCalls: toolCalls.length > 0 ? toolCalls : undefined
+                toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+                prefix: msg.prefix  // Include prefix if available
               })
             }
           }
@@ -246,26 +256,30 @@ export function App() {
       return
     }
 
-    const message = inputValue.trim()
-    if (!message) return
+    const messageText = inputValue.trim()
+    if (!messageText) return
 
-    setMessages([...messages, { role: 'user', content: message }])
+    setMessages([...messages, { role: 'user', content: messageText }])
     setInputValue('')
     setIsLoading(true)
 
     const loadingMessage: Message = { role: 'assistant', content: '...' }
     setMessages(prev => [...prev, loadingMessage])
 
+    // Construct AgentMessage object
+    const agentMessage = {
+      role: 'user' as const,
+      content: [{ type: 'text' as const, text: messageText }],
+      timestamp: Date.now()
+    }
+
     try {
       const response = await fetch(`/api/session/${sessionId}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message,
-          baseUrl: selectedConfig.base_url,
-          apiKey: selectedConfig.api_key,
-          model: selectedConfig.model,
-          provider: selectedConfig.provider
+          message: agentMessage,
+          llmConfigName: selectedConfigName  // Only send config name, not the actual API key
         }),
       })
 
@@ -391,7 +405,7 @@ export function App() {
                         try {
                           const msg = JSON.parse(session.first_user_message)
                           const textContent = msg.content?.find((c: any) => c.type === 'text')?.text || ''
-                          return textContent.slice(0, 12) || 'empty message'
+                          return textContent.slice(0, 24) || 'empty message'
                         } catch {
                           return session.first_user_message
                         }
@@ -442,6 +456,7 @@ export function App() {
               role={msg.role}
               content={msg.content}
               toolCalls={msg.toolCalls}
+              prefix={msg.prefix}
             />
           ))}
           <div ref={messagesEndRef} />
