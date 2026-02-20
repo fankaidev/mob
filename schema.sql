@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   session_id TEXT NOT NULL,
   role TEXT NOT NULL CHECK(role IN ('user', 'assistant', 'toolResult')),
-  content TEXT NOT NULL,  -- JSON string of message content
+  content TEXT NOT NULL,  -- JSON string of message content (includes optional prefix field)
   created_at INTEGER NOT NULL,
   FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );

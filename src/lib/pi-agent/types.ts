@@ -40,7 +40,10 @@ export interface CustomAgentMessages {
 	// Empty by default
 }
 
-export type AgentMessage = Message | CustomAgentMessages[keyof CustomAgentMessages];
+// Extended message type with optional prefix for speaker identification
+export type AgentMessage = (Message | CustomAgentMessages[keyof CustomAgentMessages]) & {
+	prefix?: string  // Optional speaker prefix, e.g. "user:Kai" or "bot:AppName"
+};
 
 export interface AgentState {
 	systemPrompt: string;

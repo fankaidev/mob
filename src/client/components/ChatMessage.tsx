@@ -9,9 +9,10 @@ interface ChatMessageProps {
   role: 'user' | 'assistant'
   content: string
   toolCalls?: ToolCall[]
+  prefix?: string  // Optional speaker prefix (e.g., "user:Kai", "bot:AppName")
 }
 
-export function ChatMessage({ role, content, toolCalls }: ChatMessageProps) {
+export function ChatMessage({ role, content, toolCalls, prefix }: ChatMessageProps) {
   const formatContent = (text: string) => {
     // Ensure text is a string
     const textStr = typeof text === 'string' ? text : String(text || '')
@@ -23,6 +24,16 @@ export function ChatMessage({ role, content, toolCalls }: ChatMessageProps) {
 
   return (
     <div className={`message ${role}`}>
+      {prefix && (
+        <div style={{
+          fontSize: '0.85em',
+          opacity: 0.7,
+          marginBottom: '4px',
+          fontWeight: 500
+        }}>
+          {prefix}
+        </div>
+      )}
       {toolCalls && toolCalls.length > 0 && (
         <div className="tool-calls">
           {toolCalls.map((toolCall, idx) => (
