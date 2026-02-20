@@ -340,7 +340,7 @@ async function handleSlackMessage(
       const allThreadMessages = convertSlackToAgentMessages(historyMessages, botUserId || undefined)
 
       // Find new messages: those in thread but not in database
-      // Compare by content text to identify new messages
+      // Only include USER messages (bot messages already in DB)
       if (existingMessages.length > 0) {
         const existingTexts = new Set(
           existingMessages.map(m =>
@@ -348,13 +348,15 @@ async function handleSlackMessage(
           )
         )
 
-        // Only include messages not in database
+        // Only include USER messages not in database
+        // Bot messages are already saved, don't re-save them
         contextMessages = allThreadMessages.filter(m => {
           const text = m.content?.[0]?.type === 'text' ? m.content[0].text : ''
-          return !existingTexts.has(text)
+          const isUser = m.role === 'user'
+          return isUser && !existingTexts.has(text)
         })
 
-        console.log(`Found ${contextMessages.length} new messages out of ${allThreadMessages.length} thread messages`)
+        console.log(`Found ${contextMessages.length} new user messages out of ${allThreadMessages.length} thread messages`)
       } else {
         // No existing messages, use all thread messages
         contextMessages = allThreadMessages
