@@ -541,7 +541,12 @@ export class ChatSession {
               .map(c => c.text)
 
             if (textParts.length > 0) {
-              const fullText = textParts.join('')
+              let fullText = textParts.join('')
+
+              // Remove any [bot:xxx] or [user:xxx] prefix from the beginning
+              // This handles cases where LLM mistakenly includes the prefix in its response
+              fullText = fullText.replace(/^\s*\[(bot|user):[^\]]+\]\s*/, '')
+
               // Send only the new delta
               const deltaText = fullText.slice(previousTextLength)
               if (deltaText) {
