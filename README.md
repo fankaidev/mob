@@ -56,9 +56,12 @@ Agent 支持以下工具:
 | `edit` | 查找替换编辑 |
 | `list` | 列出目录内容 |
 | `bash` | 执行 bash 命令 |
+| `web_fetch` | 获取网页内容 |
 | `mount` | 挂载 Git 仓库 |
 | `unmount` | 卸载挂载点 |
 | `list-mounts` | 列出当前挂载 |
+
+> 💡 **直接执行 bash**: 消息以 `!` 开头可以绕过 AI 直接执行 bash 命令，例如 `!ls -la`
 
 ### 3. 文件系统
 - 基于 D1 的虚拟文件系统
@@ -75,11 +78,12 @@ Agent 支持以下工具:
 ### 5. LLM 配置管理
 - 支持多个 LLM 配置 (Anthropic/OpenAI/OpenRouter)
 - Web UI 配置管理
-- API Key 安全存储
+- API Key 存储在 D1 数据库
 
 ## 快速开始
 
 ### 环境要求
+- Node.js >= 20.0.0
 - Cloudflare 账户
 - Wrangler CLI
 
@@ -123,7 +127,7 @@ src/
 
 ## 数据库模式
 
-项目使用 7 张表:
+项目使用 8 张表:
 
 | 表名 | 用途 |
 |------|------|
@@ -134,6 +138,7 @@ src/
 | `llm_configs` | LLM 配置 |
 | `slack_apps` | Slack 应用配置 |
 | `slack_thread_mapping` | Slack 线程到会话映射 |
+| `slack_users` | Slack 用户信息缓存 |
 
 详见 `schema.sql`。
 
@@ -152,6 +157,8 @@ DELETE /api/session/:id           # 删除会话
 GET/POST/PUT/DELETE  /api/admin/llm-configs      # LLM 配置管理
 GET/POST/PUT/DELETE  /api/admin/slack-apps       # Slack 应用管理
 ```
+
+> ⚠️ **安全提示**: Admin API 应通过 Cloudflare Access 保护，避免未授权访问。
 
 ### Slack 集成
 ```
