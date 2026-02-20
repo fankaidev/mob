@@ -298,29 +298,49 @@ async function handleSlackMessage(
       currentUserMessage.prefix = `user:${userName}`
     }
 
-    // Get thread history if this is a reply in a thread
+    // Check for existing session
+    let sessionId = await getSessionIdFromThreadKey(env.DB, threadKey)
+
+    // Get thread history
     let contextMessages: any[] = []
     if (event.thread_ts) {
-      const threadMessages = await client.getThreadReplies(channel, event.thread_ts)
+      if (sessionId) {
+        // Load from database (preserves correct bot prefixes)
+        const result = await env.DB.prepare(
+          'SELECT content FROM messages WHERE session_id = ? ORDER BY created_at ASC'
+        ).bind(sessionId).all()
 
-      console.log('threadMessages', threadMessages)
+        contextMessages = result.results.map((row: any) => JSON.parse(row.content))
+      } else {
+        // No session yet - check if thread has bot messages
+        const threadMessages = await client.getThreadReplies(channel, event.thread_ts)
+        const hasBotMessages = threadMessages.some(msg => msg.bot_id)
 
-      // Enrich messages with user names and bot names
-      for (const msg of threadMessages) {
-        if (msg.user && !msg.bot_id && msg.user !== botUserId) {
-          msg.user_name = await getUserInfo(env.DB, client, appConfig.app_id, msg.user)
-        } else if (msg.bot_id) {
-          msg.bot_name = appConfig.llm_config_name
+        if (hasBotMessages) {
+          // Error: bot messages exist but no session found
+          await client.postMessage(
+            channel,
+            'Error: Thread state inconsistent. Please start a new conversation.',
+            threadTs
+          )
+          return
         }
-      }
 
-      // Exclude the current message (last one) since we'll add it separately
-      const historyMessages = threadMessages.slice(0, -1)
-      contextMessages = convertSlackToAgentMessages(historyMessages, botUserId || undefined)
+        // No bot messages yet - this is first bot reply in thread
+        // Enrich user messages with names
+        for (const msg of threadMessages) {
+          if (msg.user && !msg.bot_id && msg.user !== botUserId) {
+            msg.user_name = await getUserInfo(env.DB, client, appConfig.app_id, msg.user)
+          }
+        }
+
+        // Convert user messages to context (exclude current message)
+        const historyMessages = threadMessages.slice(0, -1)
+        contextMessages = convertSlackToAgentMessages(historyMessages, botUserId || undefined)
+      }
     }
 
-    // Check for existing session or create new one
-    let sessionId = await getSessionIdFromThreadKey(env.DB, threadKey)
+    // Create new session if not exists
     if (!sessionId) {
       // Generate session ID in format: slack-YYYYMMDDTHHmmssZ-{random}
       sessionId = generateSessionId('slack')
