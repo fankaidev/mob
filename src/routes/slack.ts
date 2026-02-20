@@ -413,6 +413,8 @@ slack.post('/events', async (c) => {
     return c.json({ error: 'Invalid JSON' }, 400)
   }
 
+  console.log('slack event payload', payload)
+
   // Handle URL verification challenge (initial setup)
   if (payload.type === 'url_verification') {
     return c.json({ challenge: payload.challenge })
