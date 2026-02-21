@@ -120,26 +120,6 @@ export class ChatSession {
   }
 
   /**
-   * Save a message to D1
-   */
-  private async saveMessage(message: AgentMessage) {
-    const now = Date.now()
-    await this.env.DB.prepare(
-      'INSERT INTO messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)'
-    ).bind(
-      this.sessionId,
-      message.role,
-      JSON.stringify(message),
-      now
-    ).run()
-
-    // Update session timestamp
-    await this.env.DB.prepare(
-      'UPDATE sessions SET updated_at = ? WHERE id = ?'
-    ).bind(now, this.sessionId).run()
-  }
-
-  /**
    * Build model config
    */
   private buildModel(baseUrl: string, modelId: string, provider: string): Model<'anthropic-messages'> {
@@ -155,6 +135,147 @@ export class ChatSession {
       contextWindow: 200000,
       maxTokens: 8192,
     }
+  }
+
+  /**
+   * Create all tools for the agent
+   */
+  private async createTools() {
+    // Create shared bash instance for all tools
+    const bash = await createBashInstance({
+      sessionId: this.sessionId,
+      db: this.env.DB,
+      fs: this.mountableFs!,
+    })
+
+    // Create file operation tools
+    const bashTool = createBashTool(bash)
+    const readTool = createReadTool(bash)
+    const writeTool = createWriteTool(bash)
+    const editTool = createEditTool(bash)
+    const listTool = createListTool(bash)
+
+    // Create mount tools with shared MountableFs
+    const mountToolOptions = {
+      sessionId: this.sessionId,
+      db: this.env.DB,
+      mountableFs: this.mountableFs!,
+    }
+    const mountTool = createMountTool(mountToolOptions)
+    const unmountTool = createUnmountTool(mountToolOptions)
+    const listMountsTool = createListMountsTool(mountToolOptions)
+
+    // Create web fetch tool
+    const webFetchTool = createWebFetchTool()
+
+    return [readTool, writeTool, editTool, listTool, bashTool, mountTool, unmountTool, listMountsTool, webFetchTool]
+  }
+
+  /**
+   * Create event handler for agent streaming events
+   */
+  private createAgentEventHandler(
+    writer: WritableStreamDefaultWriter,
+    encoder: TextEncoder
+  ) {
+    let previousTextLength = 0
+
+    return async (event: any) => {
+      // Send tool execution events
+      if (event.type === 'tool_execution_start') {
+        await writer.write(encoder.encode(
+          `data: ${JSON.stringify({
+            type: 'tool_call_start',
+            toolName: event.toolName,
+            toolCallId: event.toolCallId,
+            args: event.args
+          })}\n\n`
+        ))
+      }
+
+      if (event.type === 'tool_execution_end') {
+        await writer.write(encoder.encode(
+          `data: ${JSON.stringify({
+            type: 'tool_call_end',
+            toolName: event.toolName,
+            toolCallId: event.toolCallId,
+            isError: event.isError
+          })}\n\n`
+        ))
+      }
+
+      // Extract text from message updates
+      if (event.type === 'message_update' && event.message.role === 'assistant') {
+        const content = event.message.content
+        if (Array.isArray(content)) {
+          const textParts = content
+            .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
+            .map(c => c.text)
+
+          if (textParts.length > 0) {
+            let fullText = textParts.join('')
+
+            // Remove any [bot:xxx] or [user:xxx] prefix from the beginning
+            // This handles cases where LLM mistakenly includes the prefix in its response
+            fullText = fullText.replace(/^\s*\[(bot|user):[^\]]+\]\s*/, '')
+
+            // Send only the new delta
+            const deltaText = fullText.slice(previousTextLength)
+            if (deltaText) {
+              await writer.write(encoder.encode(
+                `data: ${JSON.stringify({ type: 'text', text: deltaText })}\n\n`
+              ))
+              previousTextLength = fullText.length
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Process new messages after agent execution
+   * - Add assistant prefix to new assistant messages
+   * - Remove any mistakenly included prefixes from LLM response
+   */
+  private processNewMessages(
+    allMessages: AgentMessage[],
+    oldMessageCount: number,
+    assistantPrefix?: string
+  ): AgentMessage[] {
+    return allMessages.slice(oldMessageCount).map((msg) => {
+      const cloned = JSON.parse(JSON.stringify(msg))
+
+      // Add assistantPrefix to assistant messages that don't have a prefix yet
+      if (assistantPrefix && msg.role === 'assistant' && !cloned.prefix) {
+        cloned.prefix = assistantPrefix
+      }
+
+      // Remove any [bot:xxx] or [user:xxx] prefix from the beginning of text content
+      // This handles cases where LLM mistakenly includes the prefix in its response
+      if (cloned.content?.[0]?.type === 'text' && typeof cloned.content[0].text === 'string') {
+        cloned.content[0].text = cloned.content[0].text.replace(/^\s*\[(bot|user):[^\]]+\]\s*/, '')
+      }
+
+      return cloned
+    })
+  }
+
+  /**
+   * Save messages to D1 database
+   */
+  private async saveMessagesToDb(messagesToSave: AgentMessage[]) {
+    await this.env.DB.batch([
+      // Insert messages (prefix is included in the JSON content)
+      ...messagesToSave.map(msg =>
+        this.env.DB.prepare(
+          'INSERT INTO messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)'
+        ).bind(this.sessionId, msg.role, JSON.stringify(msg), Date.now())
+      ),
+      // Update session timestamp
+      this.env.DB.prepare('UPDATE sessions SET updated_at = ? WHERE id = ?')
+        .bind(Date.now(), this.sessionId),
+    ])
   }
 
   /**
@@ -419,7 +540,7 @@ export class ChatSession {
    * @param assistantPrefix - Optional prefix for new assistant messages (e.g., "bot:AppName")
    */
   private async handleChat(
-    message: AgentMessage,  // Only accept AgentMessage format
+    message: AgentMessage,
     baseUrl: string,
     apiKey: string,
     model: string,
@@ -439,169 +560,55 @@ export class ChatSession {
         `data: ${JSON.stringify({ type: 'session_id', sessionId: this.sessionId })}\n\n`
       ))
 
+      // If contextMessages provided, save them to DB and update in-memory state first
+      if (contextMessages && contextMessages.length > 0) {
+        await this.saveMessagesToDb(contextMessages)
+        this.messages = [...this.messages, ...contextMessages]
+      }
+
       // Create agent with existing messages
       const modelConfig = this.buildModel(baseUrl, model, provider)
-
-      // Create shared bash instance for all tools
-      const bash = await createBashInstance({
-        sessionId: this.sessionId,
-        db: this.env.DB,
-        fs: this.mountableFs!,
-      })
-
-      // Create file operation tools
-      const bashTool = createBashTool(bash)
-      const readTool = createReadTool(bash)
-      const writeTool = createWriteTool(bash)
-      const editTool = createEditTool(bash)
-      const listTool = createListTool(bash)
-
-      // Create mount tools with shared MountableFs
-      const mountToolOptions = {
-        sessionId: this.sessionId,
-        db: this.env.DB,
-        mountableFs: this.mountableFs!,
-      }
-      const mountTool = createMountTool(mountToolOptions)
-      const unmountTool = createUnmountTool(mountToolOptions)
-      const listMountsTool = createListMountsTool(mountToolOptions)
-
-      // Create web fetch tool
-      const webFetchTool = createWebFetchTool()
-
-      // Determine which messages to use:
-      // - If contextMessages provided (e.g., from Slack thread), use those
-      // - Otherwise use stored session messages
-      const initialMessages = contextMessages && contextMessages.length > 0
-        ? contextMessages
-        : this.messages
+      const tools = await this.createTools()
 
       // Track the number of messages before agent.prompt() to identify new messages
-      const oldMessageCount = initialMessages.length
+      const oldMessageCount = this.messages.length
 
-      // Build final system prompt: default + optional custom prompt appended
+      // Build final system prompt
       const defaultPrompt = this.getDefaultSystemPrompt()
       const finalSystemPrompt = systemPrompt
         ? `${defaultPrompt}\n\n---\n\n${systemPrompt}`
         : defaultPrompt
 
+      // Create and configure agent
       const agent = new Agent({
         initialState: {
           model: modelConfig,
           systemPrompt: finalSystemPrompt,
-          tools: [readTool, writeTool, editTool, listTool, bashTool, mountTool, unmountTool, listMountsTool, webFetchTool],
-          messages: initialMessages,  // Store clean messages without prefix
+          tools,
+          messages: this.messages,
         },
-        // Add prefix only when converting to LLM format (temporary, not stored in agent state)
-        convertToLlm: async (messages) => {
-          return this.addPrefixToMessages(messages)
-        },
+        convertToLlm: async (messages) => this.addPrefixToMessages(messages),
         getApiKey: async () => apiKey,
       })
 
-      // Track previous text length to send only deltas
-      let previousTextLength = 0
-      let eventCount = 0
-
       // Subscribe to agent events for streaming
-      agent.subscribe(async (event) => {
-        eventCount++
+      agent.subscribe(this.createAgentEventHandler(writer, encoder))
 
-        // Send tool execution events
-        if (event.type === 'tool_execution_start') {
-          await writer.write(encoder.encode(
-            `data: ${JSON.stringify({
-              type: 'tool_call_start',
-              toolName: event.toolName,
-              toolCallId: event.toolCallId,
-              args: event.args
-            })}\n\n`
-          ))
-        }
-
-        if (event.type === 'tool_execution_end') {
-          await writer.write(encoder.encode(
-            `data: ${JSON.stringify({
-              type: 'tool_call_end',
-              toolName: event.toolName,
-              toolCallId: event.toolCallId,
-              isError: event.isError
-            })}\n\n`
-          ))
-        }
-
-        // Extract text from message updates
-        if (event.type === 'message_update' && event.message.role === 'assistant') {
-          const content = event.message.content
-          if (Array.isArray(content)) {
-            const textParts = content
-              .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
-              .map(c => c.text)
-
-            if (textParts.length > 0) {
-              let fullText = textParts.join('')
-
-              // Remove any [bot:xxx] or [user:xxx] prefix from the beginning
-              // This handles cases where LLM mistakenly includes the prefix in its response
-              fullText = fullText.replace(/^\s*\[(bot|user):[^\]]+\]\s*/, '')
-
-              // Send only the new delta
-              const deltaText = fullText.slice(previousTextLength)
-              if (deltaText) {
-                await writer.write(encoder.encode(
-                  `data: ${JSON.stringify({ type: 'text', text: deltaText })}\n\n`
-                ))
-                previousTextLength = fullText.length
-              }
-            }
-          }
-        }
-      })
-
-      // Run agent with AgentMessage
+      // Run agent with message
       await agent.prompt(message)
 
-      // Process only new messages (from oldMessageCount onwards)
-      const allMessages = agent.state.messages
-      const newMessages = allMessages.slice(oldMessageCount).map((msg) => {
-        const cloned = JSON.parse(JSON.stringify(msg))
+      // Process new messages
+      const newMessages = this.processNewMessages(
+        agent.state.messages,
+        oldMessageCount,
+        assistantPrefix
+      )
 
-        // Add assistantPrefix to assistant messages that don't have a prefix yet
-        if (assistantPrefix && msg.role === 'assistant' && !cloned.prefix) {
-          cloned.prefix = assistantPrefix
-        }
+      // Update in-memory messages
+      this.messages = [...this.messages, ...newMessages]
 
-        // Remove any [bot:xxx] or [user:xxx] prefix from the beginning of text content
-        // This handles cases where LLM mistakenly includes the prefix in its response
-        if (cloned.content?.[0]?.type === 'text' && typeof cloned.content[0].text === 'string') {
-          cloned.content[0].text = cloned.content[0].text.replace(/^\s*\[(bot|user):[^\]]+\]\s*/, '')
-        }
-
-        return cloned
-      })
-
-      // Update in-memory messages: keep old + add processed new messages
-      this.messages = [...initialMessages, ...newMessages]
-
-      // Determine which messages to save:
-      // - If using contextMessages (e.g., first Slack reply), save context + new messages
-      // - Otherwise, only save new messages
-      const messagesToSave = contextMessages && contextMessages.length > 0
-        ? [...contextMessages, ...newMessages]  // Save context + new (first time in thread)
-        : newMessages  // Only save new (subsequent messages)
-
-      // Save messages to D1
-      await this.env.DB.batch([
-        // Insert messages (prefix is included in the JSON content)
-        ...messagesToSave.map(msg =>
-          this.env.DB.prepare(
-            'INSERT INTO messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)'
-          ).bind(this.sessionId, msg.role, JSON.stringify(msg), Date.now())
-        ),
-        // Update session timestamp
-        this.env.DB.prepare('UPDATE sessions SET updated_at = ? WHERE id = ?')
-          .bind(Date.now(), this.sessionId),
-      ])
+      // Save only new messages to database
+      await this.saveMessagesToDb(newMessages)
 
       // Send done signal
       await writer.write(encoder.encode('data: [DONE]\n\n'))

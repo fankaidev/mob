@@ -41,6 +41,26 @@ export class SlackClient {
   }
 
   /**
+   * Update an existing message
+   */
+  async updateMessage(
+    channel: string,
+    ts: string,
+    text: string
+  ): Promise<ChatPostMessageResponse> {
+    const response = await fetch(`${SLACK_API_BASE}/chat.update`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.botToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ channel, ts, text }),
+    })
+
+    return response.json() as Promise<ChatPostMessageResponse>
+  }
+
+  /**
    * Get all messages in a thread
    */
   async getThreadReplies(
