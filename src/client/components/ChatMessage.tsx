@@ -22,18 +22,13 @@ export function ChatMessage({ role, content, toolCalls, prefix }: ChatMessagePro
   }
 
   return (
-    <div className={`group flex gap-4 mb-6 ${role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
-      {/* Avatar */}
-      <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold ${
-        role === 'user'
-          ? 'bg-[#10a37f] text-white'
-          : 'bg-[#ececf1] text-[#353740]'
-      }`}>
-        {role === 'user' ? 'U' : 'M'}
-      </div>
-
+    <div className={`group flex mb-6 ${role === 'user' ? 'justify-end' : 'justify-start'}`}>
       {/* Content */}
-      <div className="flex-1 min-w-0 space-y-2">
+      <div className={`max-w-[75%] space-y-2 ${
+        role === 'user'
+          ? 'bg-[#f7f7f8] rounded-lg px-4 py-3 shadow-[0_1px_3px_rgba(0,0,0,0.1)]'
+          : ''
+      }`}>
         {prefix && (
           <div className="text-xs text-[#6b7280] font-medium">
             {prefix}
