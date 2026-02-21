@@ -2,71 +2,149 @@
  * Convert Slack thread messages to AgentMessage format
  */
 
-import type { SlackMessage } from './types'
 import type { AgentMessage } from '../pi-agent/types'
+import type { SlackClient } from './api'
+import type { SlackMessage } from './types'
 
 /**
- * Strip bot mention from message text
- * Removes <@UXXXXXXXX> patterns
+ * Resolve user IDs to user names from Slack messages
+ * Collects all <@USERID> mentions and message senders, returns a mapping of userId -> userName
+ * @param messages - Slack messages to scan for user IDs
+ * @param db - D1 database for caching
+ * @param client - Slack client for API calls
+ * @param appId - Slack app ID
+ * @param getUserInfoFn - Function to get user info
+ * @returns Map of userId to userName
  */
-export function stripBotMention(text: string, botUserId?: string): string {
-  if (botUserId) {
-    // Remove specific bot mention
-    text = text.replace(new RegExp(`<@${botUserId}>`, 'gi'), '')
+export async function resolveUserMentionsInMessages(
+  messages: SlackMessage[],
+  db: D1Database,
+  client: SlackClient,
+  appId: string,
+  getUserInfoFn: (db: D1Database, client: SlackClient, appId: string, userId: string) => Promise<string>
+): Promise<Map<string, string>> {
+  const mentionRegex = /<@([A-Z0-9]+)>/g
+  const allUserIds = new Set<string>()
+
+  for (const msg of messages) {
+    // Collect message sender IDs
+    if (msg.user) {
+      allUserIds.add(msg.user)
+    }
+
+    // Collect mentioned user IDs in text
+    if (msg.text) {
+      const matches = msg.text.matchAll(mentionRegex)
+      for (const match of matches) {
+        allUserIds.add(match[1])
+      }
+    }
   }
-  // Remove all @mentions as fallback
-  text = text.replace(/<@[A-Z0-9]+>/gi, '')
-  return text.trim()
+
+  // Resolve all user IDs to names in parallel
+  const userIdToName = new Map<string, string>()
+  if (allUserIds.size > 0) {
+    const userIds = Array.from(allUserIds)
+    const userNames = await Promise.all(
+      userIds.map(userId => getUserInfoFn(db, client, appId, userId))
+    )
+    userIds.forEach((userId, index) => {
+      userIdToName.set(userId, userNames[index])
+    })
+  }
+
+  return userIdToName
 }
 
 /**
- * Convert Slack messages to AgentMessage format
- * @param slackMessages - Messages from conversations.replies API
- * @param botUserId - Bot's Slack user ID to identify bot messages
+ * Convert Slack user messages to AgentMessage format
+ * Assumes all input messages are user messages (not bot messages)
+ * Replaces user mentions and sets user prefix using the provided mapping
+ * @param slackUserMessages - User messages from conversations.replies API
+ * @param userIdToName - Mapping of userId to userName for mention replacement and prefix
  * @returns Array of AgentMessage objects
  */
-export function convertSlackToAgentMessages(
-  slackMessages: SlackMessage[],
-  botUserId?: string
+export function convertSlackUserMessagesToAgentMessages(
+  slackUserMessages: SlackMessage[],
+  userIdToName: Map<string, string>
 ): AgentMessage[] {
-  return slackMessages
-    .filter((msg) => msg.type === 'message' && msg.text)
+  const mentionRegex = /<@([A-Z0-9]+)>/g
+
+  return slackUserMessages
+    .filter((msg) => msg.type === 'message' && msg.text?.trim())
     .map((msg) => {
-      // Determine if this is a bot message
-      const isBot = msg.bot_id !== undefined || (botUserId && msg.user === botUserId)
+      let text = msg.text.trim()
 
-      // Clean up the text
-      let text = isBot ? msg.text : stripBotMention(msg.text, botUserId)
+      // Replace user mentions with resolved names
+      text = text.replace(mentionRegex, (match, userId) => {
+        const userName = userIdToName.get(userId)
+        return userName ? `@${userName}` : match
+      })
 
-      // Skip empty messages after stripping mentions
-      if (!text) {
-        return null
-      }
+      // Set user prefix from mapping (all messages are user messages)
+      const userName = userIdToName.get(msg.user!)
+      const prefix = userName ? `user:${userName}` : undefined
 
-      // Create message with prefix field (not in text)
-      const message = {
-        role: isBot ? ('assistant' as const) : ('user' as const),
+      // Create user message
+      return {
+        role: 'user' as const,
         content: [{ type: 'text' as const, text }],
         timestamp: Date.now(),
-        prefix: undefined as string | undefined
-      }
-
-      // Add prefix field to distinguish different speakers
-      if (!isBot && msg.user_name) {
-        message.prefix = `user:${msg.user_name}`
-      } else if (isBot && msg.bot_name) {
-        message.prefix = `bot:${msg.bot_name}`
-      }
-
-      return message as AgentMessage
+        prefix
+      } as AgentMessage
     })
-    .filter((msg): msg is AgentMessage => msg !== null)
 }
 
 /**
  * Extract the user's latest message from a Slack event
  * Used when we receive an app_mention event
+ * Resolves user mentions and replaces them with the user's name
+ * @param eventText - The event text containing potential user mentions
+ * @param botUserId - Bot's user ID to remove from the text
+ * @param db - D1 database for caching
+ * @param client - Slack client for API calls
+ * @param appId - Slack app ID
+ * @param getUserInfoFn - Function to get user info
+ * @returns Processed text with bot mention removed and user mentions resolved
  */
-export function extractUserMessage(eventText: string, botUserId?: string): string {
-  return stripBotMention(eventText, botUserId)
+export async function extractUserMessage(
+  eventText: string,
+  botUserId: string | undefined,
+  db: D1Database,
+  client: SlackClient,
+  appId: string,
+  getUserInfoFn: (db: D1Database, client: SlackClient, appId: string, userId: string) => Promise<string>
+): Promise<string> {
+  let text = eventText
+  console.log('eventText', eventText)
+
+  // Find all user mentions (excluding the bot)
+  const mentionRegex = /<@([A-Z0-9]+)>/g
+  const matches = Array.from(text.matchAll(mentionRegex))
+
+  if (matches.length > 0) {
+    // Collect unique user IDs
+    const userIds = [...new Set(matches.map(m => m[1]))]
+
+    // Resolve all user IDs to names in parallel
+    const userNames = await Promise.all(
+      userIds.map(userId => getUserInfoFn(db, client, appId, userId))
+    )
+
+    // Create mapping
+    const userIdToName = new Map<string, string>()
+    userIds.forEach((userId, index) => {
+      userIdToName.set(userId, userNames[index])
+    })
+
+    // Replace mentions with resolved names
+    text = text.replace(mentionRegex, (match, userId) => {
+      const userName = userIdToName.get(userId)
+      return userName ? `@${userName}` : '@bot'
+    })
+  }
+
+  console.log('user message text', text)
+
+  return text.trim()
 }

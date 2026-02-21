@@ -11,8 +11,9 @@ import type {
   SlackUserCache,
 } from '../lib/slack'
 import {
-  convertSlackToAgentMessages,
+  convertSlackUserMessagesToAgentMessages,
   extractUserMessage,
+  resolveUserMentionsInMessages,
   SlackClient,
   truncateForSlack,
   verifySlackSignature,
@@ -288,24 +289,32 @@ async function getThreadContext(
 
   // Convert thread messages (exclude current message which is last)
   const historyMessages = threadMessages.slice(0, -1)
-  const allThreadMessages = convertSlackToAgentMessages(historyMessages, botUserId || undefined)
 
   // Collect new user messages from the end until we hit an assistant message
-  const contextMessages: any[] = []
-  for (let i = allThreadMessages.length - 1; i >= 0; i--) {
-    const msg = allThreadMessages[i]
-    if (msg.role === 'assistant') break
-    if (msg.role === 'user') {
-      // Add user name prefix
-      const slackMsg = historyMessages[i]
-      if (slackMsg?.user) {
-        msg.prefix = `user:${await getUserInfo(db, client, appConfig.app_id, slackMsg.user)}`
-      }
-      contextMessages.unshift(msg)
+  const rawContextMessages: any[] = []
+  for (let i = historyMessages.length - 1; i >= 0; i--) {
+    const msg = historyMessages[i]
+    // Check if this is a bot message (assistant)
+    if (msg.user === botUserId || msg.bot_id) break
+    // Only collect user messages (skip system messages or other types)
+    if (msg.user && !msg.bot_id) {
+      rawContextMessages.unshift(msg)
     }
   }
 
-  console.log(`Found ${contextMessages.length} new user messages after last bot reply (total history: ${allThreadMessages.length} messages)`)
+  // Resolve user IDs to names for all mentions in messages
+  const userIdToName = await resolveUserMentionsInMessages(
+    rawContextMessages,
+    db,
+    client,
+    appConfig.app_id,
+    getUserInfo
+  )
+
+  // Convert to agent messages (mentions and prefix will be set)
+  const contextMessages = convertSlackUserMessagesToAgentMessages(rawContextMessages, userIdToName)
+
+  console.log(`Found ${contextMessages.length} new user messages after last bot reply (total history: ${historyMessages.length} messages)`)
 
   return { contextMessages, hasError: false }
 }
@@ -336,7 +345,7 @@ async function callChatSession(
     llmConfigName: appConfig.llm_config_name,
     contextMessages: contextMessages.length > 0 ? contextMessages : undefined,
     systemPrompt: appConfig.system_prompt || undefined,
-    assistantPrefix: `bot:${appConfig.llm_config_name}`,
+    assistantPrefix: `bot:${appConfig.app_name}`,
   }
 
   // Call ChatSession
@@ -384,7 +393,14 @@ async function handleSlackMessage(
     }
 
     // Extract and validate user message
-    const userMessage = extractUserMessage(event.text || '', botUserId || undefined)
+    const userMessage = await extractUserMessage(
+      event.text || '',
+      botUserId || undefined,
+      env.DB,
+      client,
+      appConfig.app_id,
+      getUserInfo
+    )
     if (!userMessage && !event.thread_ts) {
       await client.postMessage(
         channel,
