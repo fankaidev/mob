@@ -97,7 +97,6 @@ CREATE TABLE IF NOT EXISTS slack_thread_mapping (
   app_id TEXT NOT NULL,                -- Slack App ID that owns this thread
   channel TEXT NOT NULL,               -- Slack channel ID
   thread_ts TEXT,                      -- Thread timestamp (NULL for non-threaded)
-  user_id TEXT,                        -- Slack user ID who started the thread
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );

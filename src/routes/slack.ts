@@ -91,19 +91,18 @@ async function saveThreadMapping(
   sessionId: string,
   appId: string,
   channel: string,
-  threadTs: string | null,
-  userId: string | null
+  threadTs: string | null
 ): Promise<void> {
   const now = Date.now()
   await db
     .prepare(`
-      INSERT INTO slack_thread_mapping (thread_key, session_id, app_id, channel, thread_ts, user_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO slack_thread_mapping (thread_key, session_id, app_id, channel, thread_ts, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(thread_key) DO UPDATE SET
         session_id = excluded.session_id,
         updated_at = excluded.updated_at
     `)
-    .bind(threadKey, sessionId, appId, channel, threadTs, userId, now, now)
+    .bind(threadKey, sessionId, appId, channel, threadTs, now, now)
     .run()
 }
 
@@ -239,6 +238,122 @@ async function collectSSEResponse(response: globalThis.Response): Promise<string
 }
 
 /**
+ * Get or fetch bot user ID
+ */
+async function ensureBotUserId(
+  db: D1Database,
+  client: SlackClient,
+  appConfig: SlackAppConfig
+): Promise<string | null> {
+  if (appConfig.bot_user_id) {
+    return appConfig.bot_user_id
+  }
+
+  const botUserId = await client.getBotUserId()
+  if (botUserId) {
+    await updateBotUserId(db, appConfig.app_id, botUserId)
+  }
+  return botUserId
+}
+
+/**
+ * Get thread history and find new messages not yet in database
+ */
+async function getThreadContext(
+  db: D1Database,
+  client: SlackClient,
+  appConfig: SlackAppConfig,
+  event: SlackEvent,
+  sessionId: string | null,
+  botUserId: string | null
+): Promise<{ contextMessages: any[], hasError: boolean, errorMessage?: string }> {
+  // No thread = no context needed
+  if (!event.thread_ts) {
+    return { contextMessages: [], hasError: false }
+  }
+
+  const threadMessages = await client.getThreadReplies(event.channel!, event.thread_ts)
+
+  // Check for error state: bot messages exist but no session
+  if (!sessionId) {
+    const hasBotMessages = threadMessages.some(msg => msg.bot_id)
+    if (hasBotMessages) {
+      return {
+        contextMessages: [],
+        hasError: true,
+        errorMessage: 'Error: Thread state inconsistent. Please start a new conversation.'
+      }
+    }
+  }
+
+  // Convert thread messages (exclude current message which is last)
+  const historyMessages = threadMessages.slice(0, -1)
+  const allThreadMessages = convertSlackToAgentMessages(historyMessages, botUserId || undefined)
+
+  // Collect new user messages from the end until we hit an assistant message
+  const contextMessages: any[] = []
+  for (let i = allThreadMessages.length - 1; i >= 0; i--) {
+    const msg = allThreadMessages[i]
+    if (msg.role === 'assistant') break
+    if (msg.role === 'user') {
+      // Add user name prefix
+      const slackMsg = historyMessages[i]
+      if (slackMsg?.user) {
+        msg.prefix = `user:${await getUserInfo(db, client, appConfig.app_id, slackMsg.user)}`
+      }
+      contextMessages.unshift(msg)
+    }
+  }
+
+  console.log(`Found ${contextMessages.length} new user messages after last bot reply (total history: ${allThreadMessages.length} messages)`)
+
+  return { contextMessages, hasError: false }
+}
+
+/**
+ * Call ChatSession DO and collect response
+ */
+async function callChatSession(
+  env: Env['Bindings'],
+  sessionId: string,
+  currentUserMessage: any,
+  appConfig: SlackAppConfig,
+  contextMessages: any[]
+): Promise<string> {
+  const doId = env.CHAT_SESSION.idFromName(sessionId)
+
+  // Fail fast: verify id.name is set
+  if (!doId.name) {
+    console.error('idFromName() did not set name:', { sessionId, idString: doId.toString() })
+    throw new Error('Failed to create session')
+  }
+
+  const stub = env.CHAT_SESSION.get(doId)
+
+  // Build request
+  const chatRequest = {
+    message: currentUserMessage,
+    llmConfigName: appConfig.llm_config_name,
+    contextMessages: contextMessages.length > 0 ? contextMessages : undefined,
+    systemPrompt: appConfig.system_prompt || undefined,
+    assistantPrefix: `bot:${appConfig.llm_config_name}`,
+  }
+
+  // Call ChatSession
+  const response = await stub.fetch('http://fake-host/chat', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Session-Id': sessionId,
+    },
+    body: JSON.stringify(chatRequest),
+  })
+
+  // Collect response
+  return await collectSSEResponse(response as unknown as globalThis.Response)
+}
+
+/**
  * Handle Slack message asynchronously
  */
 async function handleSlackMessage(
@@ -255,15 +370,9 @@ async function handleSlackMessage(
 
   try {
     // Get or fetch bot user ID
-    let botUserId = appConfig.bot_user_id
-    if (!botUserId) {
-      botUserId = await client.getBotUserId()
-      if (botUserId) {
-        await updateBotUserId(env.DB, appConfig.app_id, botUserId)
-      }
-    }
+    const botUserId = await ensureBotUserId(env.DB, client, appConfig)
 
-    // Get LLM config
+    // Validate LLM config exists
     const llmConfig = await getLLMConfig(env.DB, appConfig.llm_config_name)
     if (!llmConfig) {
       await client.postMessage(
@@ -274,9 +383,8 @@ async function handleSlackMessage(
       return
     }
 
-    // Extract user message from event
-    let userMessage = extractUserMessage(event.text || '', botUserId || undefined)
-    // Only require a message for new conversations (not replies in threads)
+    // Extract and validate user message
+    const userMessage = extractUserMessage(event.text || '', botUserId || undefined)
     if (!userMessage && !event.thread_ts) {
       await client.postMessage(
         channel,
@@ -287,7 +395,7 @@ async function handleSlackMessage(
     }
 
     // Construct current user message with prefix
-    let currentUserMessage: any = {
+    const currentUserMessage: any = {
       role: 'user',
       content: [{ type: 'text', text: userMessage }],
       timestamp: Date.now()
@@ -298,111 +406,37 @@ async function handleSlackMessage(
       currentUserMessage.prefix = `user:${userName}`
     }
 
-    // Check for existing session
+    // Get or create session
     let sessionId = await getSessionIdFromThreadKey(env.DB, threadKey)
 
-    // Get thread history to capture any new messages between bot replies
-    let contextMessages: any[] = []
-    if (event.thread_ts) {
-      const threadMessages = await client.getThreadReplies(channel, event.thread_ts)
+    // Get thread context (history and new messages)
+    const { contextMessages, hasError, errorMessage } = await getThreadContext(
+      env.DB,
+      client,
+      appConfig,
+      event,
+      sessionId,
+      botUserId
+    )
 
-      if (!sessionId) {
-        // New session - check if bot messages exist without session (error state)
-        const hasBotMessages = threadMessages.some(msg => msg.bot_id)
-        if (hasBotMessages) {
-          await client.postMessage(
-            channel,
-            'Error: Thread state inconsistent. Please start a new conversation.',
-            threadTs
-          )
-          return
-        }
-      }
-
-      // Get existing messages from database (if session exists)
-      let existingMessages: any[] = []
-      if (sessionId) {
-        const result = await env.DB.prepare(
-          'SELECT content FROM messages WHERE session_id = ? ORDER BY created_at ASC'
-        ).bind(sessionId).all()
-        existingMessages = result.results.map((row: any) => JSON.parse(row.content))
-      }
-
-      // Enrich messages with user names
-      for (const msg of threadMessages) {
-        if (msg.user && !msg.bot_id && msg.user !== botUserId) {
-          msg.user_name = await getUserInfo(env.DB, client, appConfig.app_id, msg.user)
-        }
-      }
-
-      // Convert all thread messages (exclude current message which is last)
-      const historyMessages = threadMessages.slice(0, -1)
-      const allThreadMessages = convertSlackToAgentMessages(historyMessages, botUserId || undefined)
-
-      // Find new messages: those in thread but not in database
-      // Only include USER messages (bot messages already in DB)
-      if (existingMessages.length > 0) {
-        const existingTexts = new Set(
-          existingMessages.map(m =>
-            m.content?.[0]?.type === 'text' ? m.content[0].text : ''
-          )
-        )
-
-        // Only include USER messages not in database
-        // Bot messages are already saved, don't re-save them
-        contextMessages = allThreadMessages.filter(m => {
-          const text = m.content?.[0]?.type === 'text' ? m.content[0].text : ''
-          const isUser = m.role === 'user'
-          return isUser && !existingTexts.has(text)
-        })
-
-        console.log(`Found ${contextMessages.length} new user messages out of ${allThreadMessages.length} thread messages`)
-      } else {
-        // No existing messages, use all thread messages
-        contextMessages = allThreadMessages
-      }
-    }
-
-    // Create new session if not exists
-    if (!sessionId) {
-      // Generate session ID in format: slack-YYYYMMDDTHHmmssZ-{random}
-      sessionId = generateSessionId('slack')
-    }
-
-    // Get Durable Object
-    const doId = env.CHAT_SESSION.idFromName(sessionId)
-
-    // Fail fast: verify id.name is set
-    if (!doId.name) {
-      console.error('idFromName() did not set name:', { sessionId, idString: doId.toString() })
-      await client.postMessage(
-        channel,
-        'Internal error: Failed to create session',
-        threadTs
-      )
+    if (hasError) {
+      await client.postMessage(channel, errorMessage!, threadTs)
       return
     }
 
-    const stub = env.CHAT_SESSION.get(doId)
-
-    // Build request to ChatSession
-    const chatRequest = {
-      message: currentUserMessage,
-      llmConfigName: appConfig.llm_config_name,  // Pass config name instead of credentials
-      contextMessages: contextMessages.length > 0 ? contextMessages : undefined,
-      systemPrompt: appConfig.system_prompt || undefined,
-      assistantPrefix: `bot:${appConfig.llm_config_name}`,  // Add prefix for bot responses
+    // Create new session if needed
+    if (!sessionId) {
+      sessionId = generateSessionId('slack')
     }
 
-    // Call ChatSession with session ID in header
-    const response = await stub.fetch('http://fake-host/chat', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Session-Id': sessionId,
-      },
-      body: JSON.stringify(chatRequest),
-    })
+    // Call ChatSession DO
+    const fullResponse = await callChatSession(
+      env,
+      sessionId,
+      currentUserMessage,
+      appConfig,
+      contextMessages
+    )
 
     // Save thread mapping
     await saveThreadMapping(
@@ -411,12 +445,8 @@ async function handleSlackMessage(
       sessionId,
       appConfig.app_id,
       channel,
-      event.thread_ts || null,
-      event.user || null
+      event.thread_ts || null
     )
-
-    // Collect response (cast to handle CF Workers Response type)
-    const fullResponse = await collectSSEResponse(response as unknown as globalThis.Response)
 
     // Send reply to Slack
     if (fullResponse) {
