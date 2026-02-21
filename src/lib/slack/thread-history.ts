@@ -98,7 +98,7 @@ export function convertSlackUserMessagesToAgentMessages(
 /**
  * Extract the user's latest message from a Slack event
  * Used when we receive an app_mention event
- * Removes the bot mention that triggered the event and resolves other user mentions
+ * Resolves user mentions and replaces them with the user's name
  * @param eventText - The event text containing potential user mentions
  * @param botUserId - Bot's user ID to remove from the text
  * @param db - D1 database for caching
@@ -116,11 +116,7 @@ export async function extractUserMessage(
   getUserInfoFn: (db: D1Database, client: SlackClient, appId: string, userId: string) => Promise<string>
 ): Promise<string> {
   let text = eventText
-
-  // Remove the bot mention that triggered this event
-  if (botUserId) {
-    text = text.replace(new RegExp(`<@${botUserId}>`, 'gi'), '')
-  }
+  console.log('eventText', eventText)
 
   // Find all user mentions (excluding the bot)
   const mentionRegex = /<@([A-Z0-9]+)>/g
