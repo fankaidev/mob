@@ -5,6 +5,8 @@ node_modules/
 dist/
 .wrangler/
 public/static/client.js
+public/static/client.css
+public/static/assets/
 
 # TypeScript compiled files (should not exist in src/)
 src/**/*.js

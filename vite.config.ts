@@ -13,6 +13,8 @@ export default defineConfig({
       input: './src/client/index.tsx',
       output: {
         entryFileNames: 'client.js',
+        chunkFileNames: 'client.js',
+        assetFileNames: 'client.css',
         dir: 'public/static',
       },
     },

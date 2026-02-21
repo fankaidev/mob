@@ -38,16 +38,33 @@ export function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [sessionId, setSessionId] = useState('')
   const [sessions, setSessions] = useState<Session[]>([])
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true)
   const [selectedConfig, setSelectedConfig] = useState<LLMConfig | null>(null)
   const [selectedConfigName, setSelectedConfigName] = useState<string | null>(null)
+  const [llmConfigs, setLlmConfigs] = useState<LLMConfig[]>([])
+  const [isConfigDropdownOpen, setIsConfigDropdownOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const dropdownRef = useRef<HTMLDivElement>(null)
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsConfigDropdownOpen(false)
+      }
+    }
+
+    if (isConfigDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [isConfigDropdownOpen])
 
   // Initialize session ID and load saved config
   useEffect(() => {
@@ -72,7 +89,20 @@ export function App() {
 
     loadHistory(sid)
     loadSessions()
+    loadLlmConfigs()
   }, [])
+
+  const loadLlmConfigs = async () => {
+    try {
+      const response = await fetch('/api/admin/llm-configs')
+      if (response.ok) {
+        const data = await response.json() as { configs: LLMConfig[] }
+        setLlmConfigs(data.configs)
+      }
+    } catch (error) {
+      console.error('Failed to load LLM configs:', error)
+    }
+  }
 
   const loadSelectedConfig = async (configName: string) => {
     try {
@@ -248,6 +278,10 @@ export function App() {
     }
   }
 
+  const handleQuickSwitchConfig = (configName: string) => {
+    loadSelectedConfig(configName)
+  }
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
 
@@ -373,112 +407,204 @@ export function App() {
   }
 
   return (
-    <div style={{ display: 'flex', height: '100vh' }}>
+    <div className="flex h-screen bg-[#f7f7f8]">
       {/* Sidebar */}
-      <div className={`sidebar ${isSidebarOpen ? 'open' : ''}`}>
-        <div className="sidebar-header">
-          <h3>Sessions</h3>
-          <button className="close-sidebar-btn" onClick={() => setIsSidebarOpen(false)}>×</button>
-        </div>
-        <button className="new-chat-btn" onClick={createNewSession}>
-          + New Chat
-        </button>
-        <div className="sessions-list">
-          {sessions.length === 0 ? (
-            <div style={{ padding: '1rem', color: 'rgba(255,255,255,0.6)', textAlign: 'center' }}>
-              No sessions yet
-            </div>
-          ) : (
-            sessions.map((session) => (
-              <div
-                key={session.id}
-                className={`session-item ${session.id === sessionId ? 'active' : ''}`}
-                onClick={() => switchSession(session.id)}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="session-name">
-                      {(() => {
-                        if (!session.first_user_message) {
-                          return 'no message'
-                        }
-                        try {
-                          const msg = JSON.parse(session.first_user_message)
-                          const textContent = msg.content?.find((c: any) => c.type === 'text')?.text || ''
-                          return textContent.slice(0, 24) || 'empty message'
-                        } catch {
-                          return session.first_user_message
-                        }
-                      })()}
-                    </div>
-                    <div className="session-date">
-                      {formatDateTime(session.updated_at)}
-                    </div>
-                    <div className="session-id">
-                      {session.id}
+      <div className={`${isSidebarOpen ? 'w-64' : 'w-0'} transition-all duration-200 bg-white overflow-hidden flex-shrink-0 border-r border-[#d9d9e3]`}>
+        <div className="flex flex-col h-full w-64">
+          <div className="flex-1 overflow-y-auto pt-2">
+            <div className="px-2 pb-2">
+              {sessions.length === 0 ? (
+                <div className="py-8 text-center text-[#6b7280] text-xs">
+                  No chats yet
+                </div>
+              ) : (
+                sessions.map((session) => (
+                  <div
+                    key={session.id}
+                    className={`group relative mb-1 px-3 py-2.5 rounded-md cursor-pointer hover:bg-[#ececf1] transition-colors ${
+                      session.id === sessionId ? 'bg-[#ececf1]' : ''
+                    }`}
+                    onClick={() => switchSession(session.id)}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium truncate text-[#353740]">
+                          {(() => {
+                            if (!session.first_user_message) {
+                              return 'New chat'
+                            }
+                            try {
+                              const msg = JSON.parse(session.first_user_message)
+                              const textContent = msg.content?.find((c: any) => c.type === 'text')?.text || ''
+                              return textContent.slice(0, 30) || 'New chat'
+                            } catch {
+                              return session.first_user_message
+                            }
+                          })()}
+                        </div>
+                        <div className="text-xs text-[#6b7280] mt-1">
+                          {formatDateTime(session.updated_at)}
+                        </div>
+                        <div className="text-xs text-[#6b7280] truncate mt-0.5">
+                          {session.id}
+                        </div>
+                      </div>
+                      <button
+                        className="h-6 w-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white rounded flex-shrink-0"
+                        onClick={(e) => deleteSession(session.id, e)}
+                        title="Delete"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <polyline points="3 6 5 6 21 6"></polyline>
+                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                      </button>
                     </div>
                   </div>
-                  <button
-                    className="delete-session-btn"
-                    onClick={(e) => deleteSession(session.id, e)}
-                    title="Delete session"
-                  >
-                    🗑️
-                  </button>
-                </div>
-              </div>
-            ))
-          )}
+                ))
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
       {/* Main content */}
-      <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-        <header>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <button className="menu-btn" onClick={() => setIsSidebarOpen(!isSidebarOpen)}>
-              ☰
+      <div className="flex flex-col flex-1 min-w-0">
+        {/* Header */}
+        <header className="bg-white px-4 py-2.5 flex items-center justify-between border-b border-[#d9d9e3]">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className="h-8 w-8 flex items-center justify-center hover:bg-[#ececf1] rounded-md transition-colors"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="3" y1="12" x2="21" y2="12"></line>
+                <line x1="3" y1="6" x2="21" y2="6"></line>
+                <line x1="3" y1="18" x2="21" y2="18"></line>
+              </svg>
             </button>
-            <h1>Mob Chat</h1>
+
+            {/* LLM Config Dropdown */}
             {selectedConfigName && (
-              <span className="config-badge">{selectedConfigName}</span>
+              <div className="relative" ref={dropdownRef}>
+                <button
+                  onClick={() => setIsConfigDropdownOpen(!isConfigDropdownOpen)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold hover:bg-[#ececf1] rounded-md transition-colors"
+                >
+                  {selectedConfigName}
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="transition-transform" style={{ transform: isConfigDropdownOpen ? 'rotate(180deg)' : 'rotate(0)' }}>
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                  </svg>
+                </button>
+
+                {isConfigDropdownOpen && (
+                  <div className="absolute left-0 top-full mt-1 w-56 bg-white border border-[#d9d9e3] rounded-lg shadow-lg z-50">
+                    <div className="px-3 py-2 text-xs font-semibold text-[#6b7280] border-b border-[#d9d9e3]">
+                      Switch Model
+                    </div>
+                    <div className="py-1">
+                      {llmConfigs.map((config) => (
+                        <button
+                          key={config.name}
+                          onClick={() => {
+                            handleQuickSwitchConfig(config.name)
+                            setIsConfigDropdownOpen(false)
+                          }}
+                          className={`w-full px-3 py-2 text-left hover:bg-[#ececf1] transition-colors ${
+                            config.name === selectedConfigName ? 'bg-[#ececf1]' : ''
+                          }`}
+                        >
+                          <div className="flex flex-col">
+                            <span className="font-medium text-sm text-[#353740]">{config.name}</span>
+                            <span className="text-xs text-[#6b7280]">
+                              {config.provider} · {config.model}
+                            </span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="border-t border-[#d9d9e3]">
+                      <button
+                        onClick={() => {
+                          setIsSettingsOpen(true)
+                          setIsConfigDropdownOpen(false)
+                        }}
+                        className="w-full px-3 py-2 text-left text-sm hover:bg-[#ececf1] transition-colors flex items-center gap-2"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path>
+                          <circle cx="12" cy="12" r="3"></circle>
+                        </svg>
+                        Settings
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
           </div>
-          <button className="settings-btn" onClick={() => setIsSettingsOpen(true)}>
-            Settings
+
+          <button
+            onClick={createNewSession}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-[#d9d9e3] rounded-md hover:bg-[#ececf1] transition-colors"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            New chat
           </button>
         </header>
 
-        <div id="messages">
-          {messages.map((msg, idx) => (
-            <ChatMessage
-              key={idx}
-              role={msg.role}
-              content={msg.content}
-              toolCalls={msg.toolCalls}
-              prefix={msg.prefix}
-            />
-          ))}
-          <div ref={messagesEndRef} />
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="max-w-3xl mx-auto px-4 py-6">
+            {messages.map((msg, idx) => (
+              <ChatMessage
+                key={idx}
+                role={msg.role}
+                content={msg.content}
+                toolCalls={msg.toolCalls}
+                prefix={msg.prefix}
+              />
+            ))}
+            <div ref={messagesEndRef} />
+          </div>
         </div>
 
-        <form id="input-form" onSubmit={handleSubmit}>
-          <input
-            ref={inputRef}
-            type="text"
-            id="message-input"
-            placeholder={selectedConfig ? "Type your message..." : "Select a config in Settings first..."}
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            disabled={isLoading || !selectedConfig}
-          />
-          <button type="submit" disabled={isLoading || !selectedConfig}>Send</button>
-        </form>
+        {/* Input Form */}
+        <div className="border-t border-[#d9d9e3] bg-white px-4 py-4">
+          <form onSubmit={handleSubmit} className="max-w-3xl mx-auto">
+            <div className="relative flex items-center gap-2">
+              <input
+                ref={inputRef}
+                type="text"
+                className="flex-1 rounded-xl border border-[#d9d9e3] bg-[#f7f7f8] px-4 py-3 text-sm shadow-sm placeholder:text-[#6b7280] focus:outline-none focus:border-[#10a37f] disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
+                placeholder={selectedConfig ? "Message Mob..." : "Select a model first..."}
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                disabled={isLoading || !selectedConfig}
+              />
+              <button
+                type="submit"
+                disabled={isLoading || !selectedConfig}
+                className="h-10 w-10 rounded-lg bg-[#10a37f] text-white flex items-center justify-center hover:bg-[#0e9070] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M.5 1.163A1 1 0 0 1 1.97.28l12.868 6.837a1 1 0 0 1 0 1.766L1.969 15.72A1 1 0 0 1 .5 14.836V10.33a1 1 0 0 1 .816-.983L8.5 8 1.316 6.653A1 1 0 0 1 .5 5.67V1.163Z" fill="currentColor"/>
+                </svg>
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
 
       <SettingsModal
         isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
+        onClose={() => {
+          setIsSettingsOpen(false)
+          loadLlmConfigs()
+        }}
         onSelectConfig={handleSelectConfig}
         selectedConfigName={selectedConfigName}
       />

@@ -12,11 +12,11 @@ web.get('/', (c) => {
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>Mob Chat</title>
-        <link rel="stylesheet" href="/styles.css" />
+        <link rel="stylesheet" href="/static/client.css" />
       </head>
       <body>
         <div id="root"></div>
-        <script type="module" src="/static/client.js?v=4"></script>
+        <script type="module" src="/static/client.js"></script>
       </body>
     </html>
   )
