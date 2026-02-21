@@ -432,7 +432,9 @@ async function handleSlackMessage(
     // Send "processing" message first
     const processingMsg = await client.postMessage(channel, 'Processing...', threadTs)
     if (!processingMsg.ok || !processingMsg.ts) {
-      await client.postMessage(channel, 'Error: Failed to send processing message', threadTs)
+      const errorMsg = `Failed to send message: ${(processingMsg as any).error || 'unknown error'}`
+      console.error('Slack postMessage failed:', JSON.stringify(processingMsg))
+      await client.postMessage(channel, `Error: ${errorMsg}`, threadTs)
       return
     }
     const processingTs = processingMsg.ts
@@ -465,6 +467,7 @@ async function handleSlackMessage(
       }
     } catch (error) {
       // If processing fails, update the processing message with error
+      console.error('Error in ChatSession call:', error)
       await client.updateMessage(channel, processingTs, `Error: ${error instanceof Error ? error.message : String(error)}`)
       throw error
     }
