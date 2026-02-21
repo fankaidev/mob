@@ -315,6 +315,18 @@ export class ChatSession {
       })
     }
 
+    // POST /slack-event - Handle Slack event (fire-and-forget from Worker)
+    if (request.method === 'POST' && url.pathname === '/slack-event') {
+      const payload = await request.json() as any
+      // Handle in background, return immediately
+      this.handleSlackEvent(payload).catch(error => {
+        console.error('Slack event handling error in DO:', error)
+      })
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { 'Content-Type': 'application/json' }
+      })
+    }
+
     // POST /chat - Send message and get streaming response
     if (request.method === 'POST' && url.pathname === '/chat') {
       const { message, llmConfigName, contextMessages, systemPrompt, assistantPrefix } = await request.json() as {
@@ -622,5 +634,328 @@ export class ChatSession {
       ))
       await writer.close()
     }
+  }
+
+  /**
+   * Handle Slack event (called from Worker via fire-and-forget)
+   * Processes the entire Slack message flow including API calls
+   */
+  private async handleSlackEvent(payload: any) {
+    const { appConfig, event, threadKey } = payload
+
+    // Dynamic import to avoid bundling Slack client in main bundle
+    const { SlackClient, extractUserMessage, resolveUserMentionsInMessages, convertSlackUserMessagesToAgentMessages, truncateForSlack } = await import('../lib/slack')
+
+    const client = new SlackClient(appConfig.bot_token)
+    const channel = event.channel!
+    const threadTs = event.thread_ts || event.ts!
+
+    console.log('[DO] handleSlackEvent', event)
+
+    try {
+      // Get or fetch bot user ID
+      const botUserId = await this.ensureBotUserId(client, appConfig)
+
+      // Validate LLM config exists
+      const llmConfig = await this.env.DB.prepare(
+        'SELECT * FROM llm_configs WHERE name = ?'
+      ).bind(appConfig.llm_config_name).first() as any
+
+      if (!llmConfig) {
+        await client.postMessage(
+          channel,
+          `Error: LLM config "${appConfig.llm_config_name}" not found`,
+          threadTs
+        )
+        return
+      }
+
+      // Extract and validate user message
+      const userMessage = await extractUserMessage(
+        event.text || '',
+        botUserId || undefined,
+        this.env.DB,
+        client,
+        appConfig.app_id,
+        this.getUserInfo.bind(this)
+      )
+
+      if (!userMessage && !event.thread_ts) {
+        await client.postMessage(
+          channel,
+          'Please include a message after mentioning me!',
+          threadTs
+        )
+        return
+      }
+
+      // Construct current user message with prefix
+      const currentUserMessage: any = {
+        role: 'user',
+        content: [{ type: 'text', text: userMessage }],
+        timestamp: Date.now()
+      }
+
+      if (event.user) {
+        const userName = await this.getUserInfo(client, appConfig.app_id, event.user)
+        currentUserMessage.prefix = `user:${userName}`
+      }
+
+      // Get thread context (history and new messages)
+      const { contextMessages, hasError, errorMessage } = await this.getThreadContext(
+        client,
+        appConfig,
+        event,
+        botUserId
+      )
+
+      if (hasError) {
+        await client.postMessage(channel, errorMessage!, threadTs)
+        return
+      }
+
+      // Send "processing" message first
+      const processingMsg = await client.postMessage(channel, 'Processing...', threadTs)
+      if (!processingMsg.ok || !processingMsg.ts) {
+        const errorMsg = `Failed to send message: ${(processingMsg as any).error || 'unknown error'}`
+        console.error('[DO] Slack postMessage failed:', JSON.stringify(processingMsg))
+        await client.postMessage(channel, `Error: ${errorMsg}`, threadTs)
+        return
+      }
+      const processingTs = processingMsg.ts
+
+      try {
+        const { base_url: baseUrl, api_key: apiKey, model, provider } = llmConfig
+
+        // Initialize filesystem for chat
+        await this.initializeFilesystem()
+
+        // If contextMessages provided, save them to DB and update in-memory state first
+        if (contextMessages && contextMessages.length > 0) {
+          await this.saveMessagesToDb(contextMessages)
+          this.messages = [...this.messages, ...contextMessages]
+        }
+
+        // Create agent with existing messages
+        const modelConfig = this.buildModel(baseUrl, model, provider)
+        const tools = await this.createTools()
+
+        // Track the number of messages before agent.prompt() to identify new messages
+        const oldMessageCount = this.messages.length
+
+        // Build final system prompt
+        const defaultPrompt = this.getDefaultSystemPrompt()
+        const finalSystemPrompt = appConfig.system_prompt
+          ? `${defaultPrompt}\n\n---\n\n${appConfig.system_prompt}`
+          : defaultPrompt
+
+        // Create and configure agent
+        const Agent = (await import('../lib/pi-agent')).Agent
+        const agent = new Agent({
+          initialState: {
+            model: modelConfig,
+            systemPrompt: finalSystemPrompt,
+            tools,
+            messages: this.messages,
+          },
+          convertToLlm: async (messages) => this.addPrefixToMessages(messages),
+          getApiKey: async () => apiKey,
+        })
+
+        // Collect response text for Slack
+        let fullResponse = ''
+        agent.subscribe(async (event: any) => {
+          if (event.type === 'message_update' && event.message.role === 'assistant') {
+            const content = event.message.content
+            if (Array.isArray(content)) {
+              const textParts = content
+                .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
+                .map(c => c.text)
+
+              if (textParts.length > 0) {
+                fullResponse = textParts.join('')
+                // Remove any [bot:xxx] or [user:xxx] prefix from the beginning
+                fullResponse = fullResponse.replace(/^\s*\[(bot|user):[^\]]+\]\s*/, '')
+              }
+            }
+          }
+        })
+
+        // Run agent with message
+        await agent.prompt(currentUserMessage)
+
+        // Process new messages
+        const assistantPrefix = `bot:${appConfig.app_name}`
+        const newMessages = this.processNewMessages(
+          agent.state.messages,
+          oldMessageCount,
+          assistantPrefix
+        )
+
+        // Update in-memory messages
+        this.messages = [...this.messages, ...newMessages]
+
+        // Save only new messages to database
+        await this.saveMessagesToDb(newMessages)
+
+        // Save thread mapping
+        await this.env.DB.prepare(`
+          INSERT INTO slack_thread_mapping (thread_key, session_id, app_id, channel, thread_ts, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(thread_key) DO UPDATE SET
+            session_id = excluded.session_id,
+            updated_at = excluded.updated_at
+        `).bind(
+          threadKey,
+          this.sessionId,
+          appConfig.app_id,
+          channel,
+          event.thread_ts || null,
+          Date.now(),
+          Date.now()
+        ).run()
+
+        // Update the processing message with actual response
+        if (fullResponse) {
+          await client.updateMessage(channel, processingTs, truncateForSlack(fullResponse))
+        } else {
+          await client.updateMessage(channel, processingTs, 'No response generated.')
+        }
+      } catch (error) {
+        // If processing fails, update the processing message with error
+        console.error('[DO] Error in LLM call:', error)
+        await client.updateMessage(channel, processingTs, `Error: ${error instanceof Error ? error.message : String(error)}`)
+        throw error
+      }
+    } catch (error) {
+      console.error('[DO] Slack event handling error:', error)
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      await client.postMessage(
+        channel,
+        truncateForSlack(`Error: ${errorMessage}`),
+        threadTs
+      )
+    }
+  }
+
+  /**
+   * Get or fetch bot user ID
+   */
+  private async ensureBotUserId(client: any, appConfig: any): Promise<string | null> {
+    if (appConfig.bot_user_id) {
+      return appConfig.bot_user_id
+    }
+
+    const botUserId = await client.getBotUserId()
+    if (botUserId) {
+      await this.env.DB.prepare('UPDATE slack_apps SET bot_user_id = ?, updated_at = ? WHERE app_id = ?')
+        .bind(botUserId, Date.now(), appConfig.app_id)
+        .run()
+    }
+    return botUserId
+  }
+
+  /**
+   * Get user info from cache or Slack API
+   */
+  private async getUserInfo(client: any, appId: string, userId: string): Promise<string> {
+    // Try cache first
+    const cached = await this.env.DB.prepare('SELECT * FROM slack_users WHERE app_id = ? AND user_id = ?')
+      .bind(appId, userId)
+      .first() as any
+
+    if (cached) {
+      return cached.name
+    }
+
+    // Fetch from Slack API
+    try {
+      const response = await client.getUserInfo(userId)
+      if (response.ok && response.user) {
+        const user = response.user
+        const displayName = user.profile?.display_name || user.real_name || user.name
+        const realName = user.real_name || null
+        const avatarUrl = user.profile?.image_72 || null
+
+        // Save to cache
+        const now = Date.now()
+        await this.env.DB.prepare(`
+          INSERT INTO slack_users (user_id, app_id, name, real_name, avatar_url, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(user_id, app_id) DO UPDATE SET
+            name = excluded.name,
+            real_name = excluded.real_name,
+            avatar_url = excluded.avatar_url,
+            updated_at = excluded.updated_at
+        `).bind(userId, appId, displayName, realName, avatarUrl, now, now).run()
+
+        return displayName
+      }
+    } catch (error) {
+      console.error('[DO] Failed to fetch user info:', error)
+    }
+
+    return userId
+  }
+
+  /**
+   * Get thread context and find new messages not yet in database
+   */
+  private async getThreadContext(
+    client: any,
+    appConfig: any,
+    event: any,
+    botUserId: string | null
+  ): Promise<{ contextMessages: any[], hasError: boolean, errorMessage?: string }> {
+    // No thread = no context needed
+    if (!event.thread_ts) {
+      return { contextMessages: [], hasError: false }
+    }
+
+    const threadMessages = await client.getThreadReplies(event.channel!, event.thread_ts)
+
+    // Check for error state: bot messages exist but session is new
+    if (this.messages.length === 0) {
+      const hasBotMessages = threadMessages.some((msg: any) => msg.bot_id)
+      if (hasBotMessages) {
+        return {
+          contextMessages: [],
+          hasError: true,
+          errorMessage: 'Error: Thread state inconsistent. Please start a new conversation.'
+        }
+      }
+    }
+
+    // Convert thread messages (exclude current message which is last)
+    const historyMessages = threadMessages.slice(0, -1)
+
+    // Collect new user messages from the end until we hit an assistant message
+    const rawContextMessages: any[] = []
+    for (let i = historyMessages.length - 1; i >= 0; i--) {
+      const msg = historyMessages[i]
+      // Check if this is a bot message (assistant)
+      if (msg.user === botUserId || msg.bot_id) break
+      // Only collect user messages (skip system messages or other types)
+      if (msg.user && !msg.bot_id) {
+        rawContextMessages.unshift(msg)
+      }
+    }
+
+    // Resolve user IDs to names for all mentions in messages
+    const { resolveUserMentionsInMessages, convertSlackUserMessagesToAgentMessages } = await import('../lib/slack')
+    const userIdToName = await resolveUserMentionsInMessages(
+      rawContextMessages,
+      this.env.DB,
+      client,
+      appConfig.app_id,
+      this.getUserInfo.bind(this)
+    )
+
+    // Convert to agent messages
+    const contextMessages = convertSlackUserMessagesToAgentMessages(rawContextMessages, userIdToName)
+
+    console.log(`[DO] Found ${contextMessages.length} new user messages after last bot reply (total history: ${historyMessages.length} messages)`)
+
+    return { contextMessages, hasError: false }
   }
 }
