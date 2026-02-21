@@ -429,30 +429,44 @@ async function handleSlackMessage(
       sessionId = generateSessionId('slack')
     }
 
-    // Call ChatSession DO
-    const fullResponse = await callChatSession(
-      env,
-      sessionId,
-      currentUserMessage,
-      appConfig,
-      contextMessages
-    )
+    // Send "processing" message first
+    const processingMsg = await client.postMessage(channel, 'Processing...', threadTs)
+    if (!processingMsg.ok || !processingMsg.ts) {
+      await client.postMessage(channel, 'Error: Failed to send processing message', threadTs)
+      return
+    }
+    const processingTs = processingMsg.ts
 
-    // Save thread mapping
-    await saveThreadMapping(
-      env.DB,
-      threadKey,
-      sessionId,
-      appConfig.app_id,
-      channel,
-      event.thread_ts || null
-    )
+    try {
+      // Call ChatSession DO
+      const fullResponse = await callChatSession(
+        env,
+        sessionId,
+        currentUserMessage,
+        appConfig,
+        contextMessages
+      )
 
-    // Send reply to Slack
-    if (fullResponse) {
-      await client.postMessage(channel, truncateForSlack(fullResponse), threadTs)
-    } else {
-      await client.postMessage(channel, 'No response generated.', threadTs)
+      // Save thread mapping
+      await saveThreadMapping(
+        env.DB,
+        threadKey,
+        sessionId,
+        appConfig.app_id,
+        channel,
+        event.thread_ts || null
+      )
+
+      // Update the processing message with actual response
+      if (fullResponse) {
+        await client.updateMessage(channel, processingTs, truncateForSlack(fullResponse))
+      } else {
+        await client.updateMessage(channel, processingTs, 'No response generated.')
+      }
+    } catch (error) {
+      // If processing fails, update the processing message with error
+      await client.updateMessage(channel, processingTs, `Error: ${error instanceof Error ? error.message : String(error)}`)
+      throw error
     }
   } catch (error) {
     console.error('Slack message handling error:', error)
