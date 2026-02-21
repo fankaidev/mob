@@ -245,35 +245,51 @@ export function SettingsModal({ isOpen, onClose, onSelectConfig, selectedConfigN
   if (!isOpen) return null
 
   return (
-    <div className="modal show" onClick={onClose}>
-      <div className="modal-content settings-modal-large" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2>Settings</h2>
-          <button className="close-btn" onClick={onClose}>×</button>
+    <div className="fixed top-0 left-0 w-full h-full bg-black/50 z-[1000] flex items-center justify-center" onClick={onClose}>
+      <div className="bg-white p-8 rounded-lg w-[90%] max-w-[700px] max-h-[90vh] shadow-[0_10px_25px_rgba(0,0,0,0.2)] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-xl font-semibold">Settings</h2>
+          <button className="bg-none border-none text-2xl cursor-pointer text-[#6b7280] p-0 w-8 h-8 hover:text-[#1f2937]" onClick={onClose}>×</button>
         </div>
 
         {status && (
-          <div className={`settings-status ${status.type}`}>
+          <div className={`p-3 rounded-lg mb-4 text-sm ${
+            status.type === 'success' ? 'bg-[#dcfce7] text-[#166534]' :
+            status.type === 'error' ? 'bg-[#fee2e2] text-[#991b1b]' :
+            'bg-[#fef3c7] text-[#92400e]'
+          }`}>
             {status.message}
           </div>
         )}
 
         {/* Tabs */}
-        <div className="settings-tabs">
+        <div className="flex border-b border-[#e5e7eb] mb-4 gap-2">
           <button
-            className={`settings-tab ${activeTab === 'select' ? 'active' : ''}`}
+            className={`px-4 py-3 bg-none border-none border-b-2 ${
+              activeTab === 'select'
+                ? 'border-b-[#2563eb] text-[#2563eb]'
+                : 'border-b-transparent text-[#6b7280] hover:text-[#374151] hover:bg-[#f9fafb]'
+            } cursor-pointer text-sm font-medium transition-all`}
             onClick={() => setActiveTab('select')}
           >
             Select Config
           </button>
           <button
-            className={`settings-tab ${activeTab === 'llm-configs' ? 'active' : ''}`}
+            className={`px-4 py-3 bg-none border-none border-b-2 ${
+              activeTab === 'llm-configs'
+                ? 'border-b-[#2563eb] text-[#2563eb]'
+                : 'border-b-transparent text-[#6b7280] hover:text-[#374151] hover:bg-[#f9fafb]'
+            } cursor-pointer text-sm font-medium transition-all`}
             onClick={() => setActiveTab('llm-configs')}
           >
             LLM Configs
           </button>
           <button
-            className={`settings-tab ${activeTab === 'slack-apps' ? 'active' : ''}`}
+            className={`px-4 py-3 bg-none border-none border-b-2 ${
+              activeTab === 'slack-apps'
+                ? 'border-b-[#2563eb] text-[#2563eb]'
+                : 'border-b-transparent text-[#6b7280] hover:text-[#374151] hover:bg-[#f9fafb]'
+            } cursor-pointer text-sm font-medium transition-all`}
             onClick={() => setActiveTab('slack-apps')}
           >
             Slack Apps
@@ -281,32 +297,36 @@ export function SettingsModal({ isOpen, onClose, onSelectConfig, selectedConfigN
         </div>
 
         {/* Tab Content */}
-        <div className="settings-content">
+        <div className="flex-1 overflow-y-auto min-h-[300px]">
           {/* Select Config Tab */}
           {activeTab === 'select' && (
-            <div className="config-select-tab">
-              <p style={{ marginBottom: '1rem', color: 'rgba(255,255,255,0.7)' }}>
+            <div>
+              <p className="mb-4 text-[#6b7280]">
                 Select an LLM configuration to use for chat:
               </p>
               {llmConfigs.length === 0 ? (
-                <div className="empty-state">
+                <div className="text-center py-8 text-[#6b7280]">
                   No LLM configs found. Create one in the "LLM Configs" tab.
                 </div>
               ) : (
-                <div className="config-list">
+                <div className="flex flex-col gap-2">
                   {llmConfigs.map((config) => (
                     <div
                       key={config.name}
-                      className={`config-item ${selectedConfigName === config.name ? 'selected' : ''}`}
+                      className={`p-4 border rounded-lg cursor-pointer transition-all ${
+                        selectedConfigName === config.name
+                          ? 'border-[#2563eb] bg-[#eff6ff]'
+                          : 'border-[#e5e7eb] hover:border-[#2563eb] hover:bg-[#f0f9ff]'
+                      }`}
                       onClick={() => handleSelectConfig(config.name)}
                     >
-                      <div className="config-item-header">
-                        <span className="config-name">{config.name}</span>
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="font-semibold text-[#1f2937]">{config.name}</span>
                         {selectedConfigName === config.name && (
-                          <span className="config-selected-badge">Selected</span>
+                          <span className="bg-[#2563eb] text-white px-2 py-1 rounded text-xs font-medium">Selected</span>
                         )}
                       </div>
-                      <div className="config-item-details">
+                      <div className="flex gap-2 text-sm text-[#6b7280]">
                         <span>{config.provider}</span>
                         <span>•</span>
                         <span>{config.model}</span>
@@ -320,15 +340,16 @@ export function SettingsModal({ isOpen, onClose, onSelectConfig, selectedConfigN
 
           {/* LLM Configs Tab */}
           {activeTab === 'llm-configs' && (
-            <div className="llm-configs-tab">
+            <div>
               {editingLlmConfig ? (
-                <div className="config-form">
-                  <h3>{isNewLlmConfig ? 'New LLM Config' : `Edit: ${editingLlmConfig.name}`}</h3>
+                <div className="p-2">
+                  <h3 className="text-lg mb-4 text-[#1f2937]">{isNewLlmConfig ? 'New LLM Config' : `Edit: ${editingLlmConfig.name}`}</h3>
 
-                  <div className="form-group">
-                    <label>Name *</label>
+                  <div className="mb-4">
+                    <label className="block font-medium mb-2 text-[#374151]">Name *</label>
                     <input
                       type="text"
+                      className="w-full px-3 py-3 border border-[#d1d5db] rounded-lg text-base focus:outline-none focus:border-[#2563eb] focus:shadow-[0_0_0_3px_rgba(37,99,235,0.1)]"
                       value={editingLlmConfig.name}
                       onChange={(e) => setEditingLlmConfig({ ...editingLlmConfig, name: e.target.value })}
                       disabled={!isNewLlmConfig}
@@ -336,9 +357,10 @@ export function SettingsModal({ isOpen, onClose, onSelectConfig, selectedConfigN
                     />
                   </div>
 
-                  <div className="form-group">
-                    <label>Provider *</label>
+                  <div className="mb-4">
+                    <label className="block font-medium mb-2 text-[#374151]">Provider *</label>
                     <select
+                      className="w-full px-3 py-3 border border-[#d1d5db] rounded-lg text-base bg-white cursor-pointer focus:outline-none focus:border-[#2563eb] focus:shadow-[0_0_0_3px_rgba(37,99,235,0.1)]"
                       value={editingLlmConfig.provider}
                       onChange={(e) => setEditingLlmConfig({ ...editingLlmConfig, provider: e.target.value })}
                     >
@@ -349,41 +371,50 @@ export function SettingsModal({ isOpen, onClose, onSelectConfig, selectedConfigN
                     </select>
                   </div>
 
-                  <div className="form-group">
-                    <label>Base URL *</label>
+                  <div className="mb-4">
+                    <label className="block font-medium mb-2 text-[#374151]">Base URL *</label>
                     <input
                       type="text"
+                      className="w-full px-3 py-3 border border-[#d1d5db] rounded-lg text-base focus:outline-none focus:border-[#2563eb] focus:shadow-[0_0_0_3px_rgba(37,99,235,0.1)]"
                       value={editingLlmConfig.base_url}
                       onChange={(e) => setEditingLlmConfig({ ...editingLlmConfig, base_url: e.target.value })}
                       placeholder="https://api.anthropic.com"
                     />
                   </div>
 
-                  <div className="form-group">
-                    <label>API Key {isNewLlmConfig ? '*' : '(leave blank to keep existing)'}</label>
+                  <div className="mb-4">
+                    <label className="block font-medium mb-2 text-[#374151]">API Key {isNewLlmConfig ? '*' : '(leave blank to keep existing)'}</label>
                     <input
                       type="password"
+                      className="w-full px-3 py-3 border border-[#d1d5db] rounded-lg text-base focus:outline-none focus:border-[#2563eb] focus:shadow-[0_0_0_3px_rgba(37,99,235,0.1)]"
                       value={editingLlmConfig.api_key || ''}
                       onChange={(e) => setEditingLlmConfig({ ...editingLlmConfig, api_key: e.target.value })}
                       placeholder={isNewLlmConfig ? 'sk-...' : '••••••••'}
                     />
                   </div>
 
-                  <div className="form-group">
-                    <label>Model *</label>
+                  <div className="mb-4">
+                    <label className="block font-medium mb-2 text-[#374151]">Model *</label>
                     <input
                       type="text"
+                      className="w-full px-3 py-3 border border-[#d1d5db] rounded-lg text-base focus:outline-none focus:border-[#2563eb] focus:shadow-[0_0_0_3px_rgba(37,99,235,0.1)]"
                       value={editingLlmConfig.model}
                       onChange={(e) => setEditingLlmConfig({ ...editingLlmConfig, model: e.target.value })}
                       placeholder="claude-sonnet-4-20250514"
                     />
                   </div>
 
-                  <div className="form-actions">
-                    <button onClick={() => { setEditingLlmConfig(null); setIsNewLlmConfig(false) }}>
+                  <div className="flex gap-2 justify-end mt-6 pt-4 border-t border-[#e5e7eb]">
+                    <button
+                      className="px-4 py-2 bg-[#f3f4f6] text-[#374151] border-none rounded-lg text-base cursor-pointer font-medium hover:bg-[#e5e7eb]"
+                      onClick={() => { setEditingLlmConfig(null); setIsNewLlmConfig(false) }}
+                    >
                       Cancel
                     </button>
-                    <button className="primary" onClick={handleSaveLlmConfig}>
+                    <button
+                      className="px-4 py-2 bg-[#2563eb] text-white border-none rounded-lg text-base cursor-pointer font-medium hover:bg-[#1d4ed8]"
+                      onClick={handleSaveLlmConfig}
+                    >
                       {isNewLlmConfig ? 'Create' : 'Save'}
                     </button>
                   </div>
@@ -391,7 +422,7 @@ export function SettingsModal({ isOpen, onClose, onSelectConfig, selectedConfigN
               ) : (
                 <>
                   <button
-                    className="add-btn"
+                    className="w-full px-3 py-3 mb-4 bg-[#f3f4f6] text-[#374151] border-2 border-dashed border-[#d1d5db] rounded-lg cursor-pointer font-medium hover:bg-[#e5e7eb] hover:border-[#9ca3af]"
                     onClick={() => {
                       setEditingLlmConfig({ name: '', provider: '', base_url: '', model: '' })
                       setIsNewLlmConfig(true)
@@ -401,23 +432,29 @@ export function SettingsModal({ isOpen, onClose, onSelectConfig, selectedConfigN
                   </button>
 
                   {llmConfigs.length === 0 ? (
-                    <div className="empty-state">No LLM configs found</div>
+                    <div className="text-center py-8 text-[#6b7280]">No LLM configs found</div>
                   ) : (
-                    <div className="config-list">
+                    <div className="flex flex-col gap-2">
                       {llmConfigs.map((config) => (
-                        <div key={config.name} className="config-item">
-                          <div className="config-item-header">
-                            <span className="config-name">{config.name}</span>
-                            <div className="config-actions">
-                              <button onClick={() => { setEditingLlmConfig(config); setIsNewLlmConfig(false) }}>
+                        <div key={config.name} className="p-4 border border-[#e5e7eb] rounded-lg">
+                          <div className="flex justify-between items-center mb-1">
+                            <span className="font-semibold text-[#1f2937]">{config.name}</span>
+                            <div className="flex gap-2">
+                              <button
+                                className="px-3 py-1 text-xs bg-[#f3f4f6] text-[#374151] border-none rounded-lg cursor-pointer hover:bg-[#e5e7eb]"
+                                onClick={() => { setEditingLlmConfig(config); setIsNewLlmConfig(false) }}
+                              >
                                 Edit
                               </button>
-                              <button className="danger" onClick={() => handleDeleteLlmConfig(config.name)}>
+                              <button
+                                className="px-3 py-1 text-xs bg-[#fef2f2] text-[#dc2626] border-none rounded-lg cursor-pointer hover:bg-[#fee2e2]"
+                                onClick={() => handleDeleteLlmConfig(config.name)}
+                              >
                                 Delete
                               </button>
                             </div>
                           </div>
-                          <div className="config-item-details">
+                          <div className="flex gap-2 text-sm text-[#6b7280]">
                             <span>{config.provider}</span>
                             <span>•</span>
                             <span>{config.model}</span>
@@ -433,56 +470,61 @@ export function SettingsModal({ isOpen, onClose, onSelectConfig, selectedConfigN
 
           {/* Slack Apps Tab */}
           {activeTab === 'slack-apps' && (
-            <div className="slack-apps-tab">
+            <div>
               {editingSlackApp ? (
-                <div className="config-form">
-                  <h3>{isNewSlackApp ? 'New Slack App' : `Edit: ${editingSlackApp.app_name}`}</h3>
+                <div className="p-2">
+                  <h3 className="text-lg mb-4 text-[#1f2937]">{isNewSlackApp ? 'New Slack App' : `Edit: ${editingSlackApp.app_name}`}</h3>
 
-                  <div className="form-group">
-                    <label>App ID *</label>
+                  <div className="mb-4">
+                    <label className="block font-medium mb-2 text-[#374151]">App ID *</label>
                     <input
                       type="text"
+                      className="w-full px-3 py-3 border border-[#d1d5db] rounded-lg text-base focus:outline-none focus:border-[#2563eb] focus:shadow-[0_0_0_3px_rgba(37,99,235,0.1)]"
                       value={editingSlackApp.app_id}
                       onChange={(e) => setEditingSlackApp({ ...editingSlackApp, app_id: e.target.value })}
                       disabled={!isNewSlackApp}
                       placeholder="A0XXXXXXX"
                     />
-                    <small>Find this in your Slack App settings</small>
+                    <small className="block mt-1 text-[#6b7280] text-sm">Find this in your Slack App settings</small>
                   </div>
 
-                  <div className="form-group">
-                    <label>App Name *</label>
+                  <div className="mb-4">
+                    <label className="block font-medium mb-2 text-[#374151]">App Name *</label>
                     <input
                       type="text"
+                      className="w-full px-3 py-3 border border-[#d1d5db] rounded-lg text-base focus:outline-none focus:border-[#2563eb] focus:shadow-[0_0_0_3px_rgba(37,99,235,0.1)]"
                       value={editingSlackApp.app_name}
                       onChange={(e) => setEditingSlackApp({ ...editingSlackApp, app_name: e.target.value })}
                       placeholder="My Claude Bot"
                     />
                   </div>
 
-                  <div className="form-group">
-                    <label>Bot Token {isNewSlackApp ? '*' : '(leave blank to keep existing)'}</label>
+                  <div className="mb-4">
+                    <label className="block font-medium mb-2 text-[#374151]">Bot Token {isNewSlackApp ? '*' : '(leave blank to keep existing)'}</label>
                     <input
                       type="password"
+                      className="w-full px-3 py-3 border border-[#d1d5db] rounded-lg text-base focus:outline-none focus:border-[#2563eb] focus:shadow-[0_0_0_3px_rgba(37,99,235,0.1)]"
                       value={editingSlackApp.bot_token || ''}
                       onChange={(e) => setEditingSlackApp({ ...editingSlackApp, bot_token: e.target.value })}
                       placeholder={isNewSlackApp ? 'xoxb-...' : '••••••••'}
                     />
                   </div>
 
-                  <div className="form-group">
-                    <label>Signing Secret {isNewSlackApp ? '*' : '(leave blank to keep existing)'}</label>
+                  <div className="mb-4">
+                    <label className="block font-medium mb-2 text-[#374151]">Signing Secret {isNewSlackApp ? '*' : '(leave blank to keep existing)'}</label>
                     <input
                       type="password"
+                      className="w-full px-3 py-3 border border-[#d1d5db] rounded-lg text-base focus:outline-none focus:border-[#2563eb] focus:shadow-[0_0_0_3px_rgba(37,99,235,0.1)]"
                       value={editingSlackApp.signing_secret || ''}
                       onChange={(e) => setEditingSlackApp({ ...editingSlackApp, signing_secret: e.target.value })}
                       placeholder={isNewSlackApp ? 'Signing secret from Slack' : '••••••••'}
                     />
                   </div>
 
-                  <div className="form-group">
-                    <label>LLM Config *</label>
+                  <div className="mb-4">
+                    <label className="block font-medium mb-2 text-[#374151]">LLM Config *</label>
                     <select
+                      className="w-full px-3 py-3 border border-[#d1d5db] rounded-lg text-base bg-white cursor-pointer focus:outline-none focus:border-[#2563eb] focus:shadow-[0_0_0_3px_rgba(37,99,235,0.1)]"
                       value={editingSlackApp.llm_config_name}
                       onChange={(e) => setEditingSlackApp({ ...editingSlackApp, llm_config_name: e.target.value })}
                     >
@@ -495,19 +537,21 @@ export function SettingsModal({ isOpen, onClose, onSelectConfig, selectedConfigN
                     </select>
                   </div>
 
-                  <div className="form-group">
-                    <label>Team ID (optional)</label>
+                  <div className="mb-4">
+                    <label className="block font-medium mb-2 text-[#374151]">Team ID (optional)</label>
                     <input
                       type="text"
+                      className="w-full px-3 py-3 border border-[#d1d5db] rounded-lg text-base focus:outline-none focus:border-[#2563eb] focus:shadow-[0_0_0_3px_rgba(37,99,235,0.1)]"
                       value={editingSlackApp.team_id || ''}
                       onChange={(e) => setEditingSlackApp({ ...editingSlackApp, team_id: e.target.value })}
                       placeholder="T0XXXXXXX"
                     />
                   </div>
 
-                  <div className="form-group">
-                    <label>Custom System Prompt (optional)</label>
+                  <div className="mb-4">
+                    <label className="block font-medium mb-2 text-[#374151]">Custom System Prompt (optional)</label>
                     <textarea
+                      className="w-full px-3 py-3 border border-[#d1d5db] rounded-lg text-base font-[inherit] resize-y min-h-[80px] focus:outline-none focus:border-[#2563eb] focus:shadow-[0_0_0_3px_rgba(37,99,235,0.1)]"
                       value={editingSlackApp.system_prompt || ''}
                       onChange={(e) => setEditingSlackApp({ ...editingSlackApp, system_prompt: e.target.value })}
                       placeholder="Override the default system prompt for this bot..."
@@ -515,11 +559,17 @@ export function SettingsModal({ isOpen, onClose, onSelectConfig, selectedConfigN
                     />
                   </div>
 
-                  <div className="form-actions">
-                    <button onClick={() => { setEditingSlackApp(null); setIsNewSlackApp(false) }}>
+                  <div className="flex gap-2 justify-end mt-6 pt-4 border-t border-[#e5e7eb]">
+                    <button
+                      className="px-4 py-2 bg-[#f3f4f6] text-[#374151] border-none rounded-lg text-base cursor-pointer font-medium hover:bg-[#e5e7eb]"
+                      onClick={() => { setEditingSlackApp(null); setIsNewSlackApp(false) }}
+                    >
                       Cancel
                     </button>
-                    <button className="primary" onClick={handleSaveSlackApp}>
+                    <button
+                      className="px-4 py-2 bg-[#2563eb] text-white border-none rounded-lg text-base cursor-pointer font-medium hover:bg-[#1d4ed8]"
+                      onClick={handleSaveSlackApp}
+                    >
                       {isNewSlackApp ? 'Create' : 'Save'}
                     </button>
                   </div>
@@ -527,7 +577,7 @@ export function SettingsModal({ isOpen, onClose, onSelectConfig, selectedConfigN
               ) : (
                 <>
                   <button
-                    className="add-btn"
+                    className="w-full px-3 py-3 mb-4 bg-[#f3f4f6] text-[#374151] border-2 border-dashed border-[#d1d5db] rounded-lg cursor-pointer font-medium hover:bg-[#e5e7eb] hover:border-[#9ca3af]"
                     onClick={() => {
                       setEditingSlackApp({ app_id: '', app_name: '', llm_config_name: '' })
                       setIsNewSlackApp(true)
@@ -537,23 +587,29 @@ export function SettingsModal({ isOpen, onClose, onSelectConfig, selectedConfigN
                   </button>
 
                   {slackApps.length === 0 ? (
-                    <div className="empty-state">No Slack apps found</div>
+                    <div className="text-center py-8 text-[#6b7280]">No Slack apps found</div>
                   ) : (
-                    <div className="config-list">
+                    <div className="flex flex-col gap-2">
                       {slackApps.map((app) => (
-                        <div key={app.app_id} className="config-item">
-                          <div className="config-item-header">
-                            <span className="config-name">{app.app_name}</span>
-                            <div className="config-actions">
-                              <button onClick={() => { setEditingSlackApp(app); setIsNewSlackApp(false) }}>
+                        <div key={app.app_id} className="p-4 border border-[#e5e7eb] rounded-lg">
+                          <div className="flex justify-between items-center mb-1">
+                            <span className="font-semibold text-[#1f2937]">{app.app_name}</span>
+                            <div className="flex gap-2">
+                              <button
+                                className="px-3 py-1 text-xs bg-[#f3f4f6] text-[#374151] border-none rounded-lg cursor-pointer hover:bg-[#e5e7eb]"
+                                onClick={() => { setEditingSlackApp(app); setIsNewSlackApp(false) }}
+                              >
                                 Edit
                               </button>
-                              <button className="danger" onClick={() => handleDeleteSlackApp(app.app_id)}>
+                              <button
+                                className="px-3 py-1 text-xs bg-[#fef2f2] text-[#dc2626] border-none rounded-lg cursor-pointer hover:bg-[#fee2e2]"
+                                onClick={() => handleDeleteSlackApp(app.app_id)}
+                              >
                                 Delete
                               </button>
                             </div>
                           </div>
-                          <div className="config-item-details">
+                          <div className="flex gap-2 text-sm text-[#6b7280]">
                             <span>{app.app_id}</span>
                             <span>•</span>
                             <span>LLM: {app.llm_config_name}</span>
