@@ -707,17 +707,24 @@ export class ChatSession {
         currentUserMessage.prefix = `user:${userName}`
       }
 
-      // Get thread context (history and new messages)
-      const { contextMessages, hasError, errorMessage } = await this.getThreadContext(
-        client,
-        appConfig,
-        event,
-        botUserId
-      )
+      // Get thread context only for first message in session (to initialize from Slack history)
+      // For subsequent messages, rely on this.messages which already has the history
+      let contextMessages: any[] = []
 
-      if (hasError) {
-        await client.postMessage(channel, errorMessage!, threadTs)
-        return
+      if (this.messages.length === 0 && event.thread_ts) {
+        // Session is new but thread exists - need to load history from Slack
+        console.log('[DO] Loading thread history for new session')
+        const result = await this.getThreadContext(client, appConfig, event, botUserId)
+
+        if (result.hasError) {
+          await client.postMessage(channel, result.errorMessage!, threadTs)
+          return
+        }
+
+        contextMessages = result.contextMessages
+        console.log(`[DO] Loaded ${contextMessages.length} historical messages from thread`)
+      } else {
+        console.log('[DO] Skipping thread history - session already has ${this.messages.length} messages')
       }
 
       // Send "processing" message first
@@ -932,8 +939,9 @@ export class ChatSession {
       }
     }
 
-    // Convert thread messages (exclude current message which is last)
-    const historyMessages = threadMessages.slice(0, -1)
+    // Filter out current message by ts (don't assume it's the last one due to API delays)
+    const currentEventTs = event.ts
+    const historyMessages = threadMessages.filter((msg: any) => msg.ts !== currentEventTs)
 
     // Collect new user messages from the end until we hit an assistant message
     const rawContextMessages: any[] = []
