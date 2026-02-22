@@ -677,7 +677,7 @@ export class ChatSession {
         this.env.DB,
         client,
         appConfig.app_id,
-        this.getUserInfo.bind(this)
+        (_db, client, appId, userId) => this.getUserInfo(client, appId, userId)
       )
 
       if (!userMessage && !event.thread_ts) {
@@ -948,7 +948,7 @@ export class ChatSession {
       this.env.DB,
       client,
       appConfig.app_id,
-      this.getUserInfo.bind(this)
+      (_db, client, appId, userId) => this.getUserInfo(client, appId, userId)
     )
 
     // Convert to agent messages
