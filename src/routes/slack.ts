@@ -11,9 +11,9 @@ import type {
   SlackUserCache,
 } from '../lib/slack'
 import {
-  convertSlackUserMessagesToAgentMessages,
+  convertSlackMessagesToAgentMessages,
   extractUserMessage,
-  resolveUserMentionsInMessages,
+  resolveAllUserMentionsInMessages,
   SlackClient,
   truncateForSlack,
   verifySlackSignature,
@@ -70,21 +70,25 @@ async function updateBotUserId(
 }
 
 /**
- * Get session ID from thread key
+ * Get session ID and last message timestamp from thread key
  */
-async function getSessionIdFromThreadKey(
+async function getSessionFromThreadKey(
   db: D1Database,
   threadKey: string
-): Promise<string | null> {
+): Promise<{ sessionId: string; lastMessageTs: string | null } | null> {
   const result = await db
-    .prepare('SELECT session_id FROM slack_thread_mapping WHERE thread_key = ?')
+    .prepare('SELECT session_id, last_message_ts FROM slack_thread_mapping WHERE thread_key = ?')
     .bind(threadKey)
-    .first<{ session_id: string }>()
-  return result?.session_id || null
+    .first<{ session_id: string; last_message_ts: string | null }>()
+  if (!result) return null
+  return {
+    sessionId: result.session_id,
+    lastMessageTs: result.last_message_ts
+  }
 }
 
 /**
- * Save thread -> session mapping
+ * Save thread -> session mapping with last processed message timestamp
  */
 async function saveThreadMapping(
   db: D1Database,
@@ -92,18 +96,20 @@ async function saveThreadMapping(
   sessionId: string,
   appId: string,
   channel: string,
-  threadTs: string | null
+  threadTs: string | null,
+  lastMessageTs: string
 ): Promise<void> {
   const now = Date.now()
   await db
     .prepare(`
-      INSERT INTO slack_thread_mapping (thread_key, session_id, app_id, channel, thread_ts, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO slack_thread_mapping (thread_key, session_id, app_id, channel, thread_ts, last_message_ts, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(thread_key) DO UPDATE SET
         session_id = excluded.session_id,
+        last_message_ts = excluded.last_message_ts,
         updated_at = excluded.updated_at
     `)
-    .bind(threadKey, sessionId, appId, channel, threadTs, now, now)
+    .bind(threadKey, sessionId, appId, channel, threadTs, lastMessageTs, now, now)
     .run()
 }
 
@@ -191,11 +197,11 @@ async function getUserInfo(
 
 /**
  * Generate thread key from Slack event
- * Format: slack:{channel}:{thread_ts}
+ * Format: slack:{app_id}:{channel}:{thread_ts}
  */
-function getThreadKey(event: SlackEvent): string {
+function getThreadKey(appId: string, event: SlackEvent): string {
   const threadTs = event.thread_ts || event.ts
-  return `slack:${event.channel}:${threadTs}`
+  return `slack:${appId}:${event.channel}:${threadTs}`
 }
 
 // ============================================================================
@@ -266,7 +272,8 @@ async function getThreadContext(
   appConfig: SlackAppConfig,
   event: SlackEvent,
   sessionId: string | null,
-  botUserId: string | null
+  botUserId: string | null,
+  lastMessageTs: string | null
 ): Promise<{ contextMessages: any[], hasError: boolean, errorMessage?: string }> {
   // No thread = no context needed
   if (!event.thread_ts) {
@@ -275,10 +282,12 @@ async function getThreadContext(
 
   const threadMessages = await client.getThreadReplies(event.channel!, event.thread_ts)
 
-  // Check for error state: bot messages exist but no session
+  // Check for error state: THIS bot's messages exist but no session
   if (!sessionId) {
-    const hasBotMessages = threadMessages.some(msg => msg.bot_id)
-    if (hasBotMessages) {
+    const hasThisBotMessages = threadMessages.some(
+      msg => msg.user === botUserId || (msg.bot_id && msg.user === botUserId)
+    )
+    if (hasThisBotMessages) {
       return {
         contextMessages: [],
         hasError: true,
@@ -287,23 +296,24 @@ async function getThreadContext(
     }
   }
 
-  // Convert thread messages (exclude current message which is last)
-  const historyMessages = threadMessages.slice(0, -1)
-
-  // Collect new user messages from the end until we hit an assistant message
+  // Collect new messages based on lastMessageTs
+  // Exclude current message (event.ts) to avoid duplication
   const rawContextMessages: any[] = []
-  for (let i = historyMessages.length - 1; i >= 0; i--) {
-    const msg = historyMessages[i]
-    // Check if this is a bot message (assistant)
-    if (msg.user === botUserId || msg.bot_id) break
-    // Only collect user messages (skip system messages or other types)
-    if (msg.user && !msg.bot_id) {
-      rawContextMessages.unshift(msg)
+  const currentMessageTs = event.ts!
+
+  if (lastMessageTs) {
+    // Collect all messages after lastMessageTs but before current message
+    for (const msg of threadMessages) {
+      // Slack timestamps are comparable as strings since they're in format "1234567890.123456"
+      if (msg.ts > lastMessageTs && msg.ts !== currentMessageTs && (msg.user || msg.bot_id)) {
+        rawContextMessages.push(msg)
+      }
     }
   }
+  // If no lastMessageTs (new thread), contextMessages will be empty - which is correct for first interaction
 
-  // Resolve user IDs to names for all mentions in messages
-  const userIdToName = await resolveUserMentionsInMessages(
+  // Resolve all user IDs (including bots) to names
+  const userIdToName = await resolveAllUserMentionsInMessages(
     rawContextMessages,
     db,
     client,
@@ -311,10 +321,14 @@ async function getThreadContext(
     getUserInfo
   )
 
-  // Convert to agent messages (mentions and prefix will be set)
-  const contextMessages = convertSlackUserMessagesToAgentMessages(rawContextMessages, userIdToName)
+  // Convert to agent messages (handles users, current bot, other bots)
+  const contextMessages = convertSlackMessagesToAgentMessages(
+    rawContextMessages,
+    botUserId,
+    userIdToName
+  )
 
-  console.log(`Found ${contextMessages.length} new user messages after last bot reply (total history: ${historyMessages.length} messages)`)
+  console.log(`Found ${contextMessages.length} new messages after this bot's last reply`)
 
   return { contextMessages, hasError: false }
 }
@@ -373,7 +387,7 @@ async function handleSlackMessage(
   const client = new SlackClient(appConfig.bot_token)
   const channel = event.channel!
   const threadTs = event.thread_ts || event.ts!
-  const threadKey = getThreadKey(event)
+  const threadKey = getThreadKey(appConfig.app_id, event)
 
   console.log('handleSlackMessage', event)
 
@@ -423,7 +437,9 @@ async function handleSlackMessage(
     }
 
     // Get or create session
-    let sessionId = await getSessionIdFromThreadKey(env.DB, threadKey)
+    const sessionData = await getSessionFromThreadKey(env.DB, threadKey)
+    let sessionId = sessionData?.sessionId || null
+    const lastMessageTs = sessionData?.lastMessageTs || null
 
     // Get thread context (history and new messages)
     const { contextMessages, hasError, errorMessage } = await getThreadContext(
@@ -432,7 +448,8 @@ async function handleSlackMessage(
       appConfig,
       event,
       sessionId,
-      botUserId
+      botUserId,
+      lastMessageTs
     )
 
     if (hasError) {
@@ -465,14 +482,15 @@ async function handleSlackMessage(
         contextMessages
       )
 
-      // Save thread mapping
+      // Save thread mapping with current message timestamp
       await saveThreadMapping(
         env.DB,
         threadKey,
         sessionId,
         appConfig.app_id,
         channel,
-        event.thread_ts || null
+        event.thread_ts || null,
+        event.ts!  // Current message timestamp
       )
 
       // Update the processing message with actual response
