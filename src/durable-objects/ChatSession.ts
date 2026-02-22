@@ -179,6 +179,8 @@ export class ChatSession {
     encoder: TextEncoder
   ) {
     let previousTextLength = 0
+    let prefixRemoved = false  // Track if we've removed the prefix
+    let pendingText = ''  // Store pending text while waiting for complete prefix
 
     return async (event: any) => {
       // Send tool execution events
@@ -215,11 +217,43 @@ export class ChatSession {
           if (textParts.length > 0) {
             let fullText = textParts.join('')
 
-            // Remove any [bot:xxx] or [user:xxx] prefix from the beginning
-            // This handles cases where LLM mistakenly includes the prefix in its response
-            fullText = fullText.replace(/^\s*\[(bot|user):[^\]]+\]\s*/, '')
+            // Skip empty texts
+            if (!fullText) {
+              return
+            }
 
-            // Send only the new delta
+            // If we haven't removed prefix yet
+            if (!prefixRemoved) {
+              // If text starts with '[', wait until we see ']' to ensure complete prefix
+              if (fullText.startsWith('[')) {
+                if (!fullText.includes(']')) {
+                  // Incomplete prefix, store and wait for more chunks
+                  pendingText = fullText
+                  return
+                }
+                // Has complete prefix, try to clean it
+                const cleanedText = fullText.replace(/^\s*\[(bot|user):[^\]]+\]\s*/, '')
+                if (fullText !== cleanedText) {
+                  // Actually removed a prefix
+                  prefixRemoved = true
+
+                  // Send the cleaned text
+                  if (cleanedText) {
+                    await writer.write(encoder.encode(
+                      `data: ${JSON.stringify({ type: 'text', text: cleanedText })}\n\n`
+                    ))
+                  }
+                  // Track how much of the original fullText we've processed
+                  previousTextLength = fullText.length
+                  return
+                }
+              } else {
+                // First non-empty text doesn't start with '[', so no prefix to remove
+                prefixRemoved = true
+              }
+            }
+
+            // Normal processing (no prefix or already removed)
             const deltaText = fullText.slice(previousTextLength)
             if (deltaText) {
               await writer.write(encoder.encode(
@@ -228,6 +262,16 @@ export class ChatSession {
               previousTextLength = fullText.length
             }
           }
+        }
+      }
+
+      // Handle completion - flush any pending text
+      if (event.type === 'agent_complete') {
+        if (pendingText) {
+          // Stream ended with pending text, output it
+          await writer.write(encoder.encode(
+            `data: ${JSON.stringify({ type: 'text', text: pendingText })}\n\n`
+          ))
         }
       }
     }
@@ -251,7 +295,7 @@ export class ChatSession {
         cloned.prefix = assistantPrefix
       }
 
-      // Remove any [bot:xxx] or [user:xxx] prefix from the beginning of text content
+      // Remove [bot:xxx] or [user:xxx] prefix from the beginning of text content
       // This handles cases where LLM mistakenly includes the prefix in its response
       if (cloned.content?.[0]?.type === 'text' && typeof cloned.content[0].text === 'string') {
         cloned.content[0].text = cloned.content[0].text.replace(/^\s*\[(bot|user):[^\]]+\]\s*/, '')
@@ -592,10 +636,15 @@ export class ChatSession {
       })
 
       // Subscribe to agent events for streaming
-      agent.subscribe(this.createAgentEventHandler(writer, encoder))
+      const eventHandler = this.createAgentEventHandler(writer, encoder)
+      agent.subscribe(eventHandler)
 
       // Run agent with message
       await agent.prompt(message)
+
+      // Flush any pending text after agent completes
+      // Call the handler with a completion event to trigger flush
+      await eventHandler({ type: 'agent_complete' })
 
       // Process new messages
       const newMessages = this.processNewMessages(

@@ -70,8 +70,11 @@ Agent 支持以下工具:
 - 完整的 bash 命令支持 (grep, sed, awk, find 等)
 
 ### 4. Slack 集成
+- **多 Bot 会话隔离**: 每个 bot 在同一 thread 中维护独立 session
+- **跨 Bot 对话**: 其他 bot 的消息显示为带 `bot:BotName` prefix 的 User Message
+- **智能上下文**: 基于 timestamp 追踪，只加载新消息，避免重复
 - 多应用支持 (每个应用可配置不同 LLM)
-- @mention 触发对话
+- @mention 触发对话，保留所有 mentions
 - 线程上下文保持
 - 签名验证 (HMAC-SHA256)
 
@@ -137,10 +140,16 @@ src/
 | `mounts` | Git 挂载配置 |
 | `llm_configs` | LLM 配置 |
 | `slack_apps` | Slack 应用配置 |
-| `slack_thread_mapping` | Slack 线程到会话映射 |
-| `slack_users` | Slack 用户信息缓存 |
+| `slack_thread_mapping` | Slack 线程到会话映射 (含 `last_message_ts` 用于增量加载) |
+| `slack_users` | Slack 用户和 Bot 信息缓存 (通过 `users.info` API) |
 
-详见 `schema.sql`。
+详见 `schema.sql` 和 `migrations/` 目录。
+
+### 重要字段说明
+
+**`slack_thread_mapping.thread_key`**: 格式为 `slack:{app_id}:{channel}:{thread_ts}`，确保每个 bot 独立 session
+
+**`slack_thread_mapping.last_message_ts`**: Slack 消息的 timestamp，用于只加载新消息，避免重复处理
 
 ## API 端点
 
@@ -206,12 +215,84 @@ npm run build      # Vite 构建前端到 public/static/
 
 ### 数据库操作
 ```bash
-# 本地执行 SQL
+# 初始化数据库（首次部署）
 npx wrangler d1 execute mob-session --local --file=schema.sql
-
-# 远程执行 SQL
 npx wrangler d1 execute mob-session --remote --file=schema.sql
+
+# 执行迁移脚本（更新数据库结构）
+npx wrangler d1 execute mob-session --local --file=migrations/001_add_last_message_ts.sql
+npx wrangler d1 execute mob-session --remote --file=migrations/001_add_last_message_ts.sql
 ```
+
+⚠️ **重要**: 迁移脚本使用 `ALTER TABLE` 添加列，不会影响现有数据。
+
+## 多 Bot 场景
+
+### 会话隔离机制
+
+系统支持多个 Slack bot 在同一 thread 中独立工作：
+
+**Thread Key 格式**: `slack:{app_id}:{channel}:{thread_ts}`
+- 每个 bot 通过 `app_id` 区分，维护独立的 session
+- 同一 thread 中的不同 bot 不会共享对话历史
+
+**消息追踪**: 使用 `last_message_ts` 字段
+- 记录每个 bot 最后处理的 Slack 消息 timestamp
+- 只加载 `ts > last_message_ts` 的新消息，避免重复
+- 不依赖"找到 bot 消息"的假设，更准确可靠
+
+### 跨 Bot 对话
+
+当多个 bot 在同一 thread 中交互时：
+
+**其他 Bot 的消息** → `User Message` with `prefix: "bot:BotName"`
+```json
+{
+  "role": "user",
+  "content": [{ "type": "text", "text": "Here's my answer" }],
+  "prefix": "bot:GPTHelper"
+}
+```
+
+**真实用户消息** → `User Message` with `prefix: "user:UserName"`
+```json
+{
+  "role": "user",
+  "content": [{ "type": "text", "text": "@Bot1 hello" }],
+  "prefix": "user:John"
+}
+```
+
+**Prefix 自动清理**: LLM 生成的响应中如果包含 `[bot:xxx]` 或 `[user:xxx]` 会被自动移除，避免在 Slack 中显示。
+
+### 示例场景
+
+```
+Thread 消息:
+1. User1: "@Bot1 hello"
+2. Bot1: "Hi!"
+3. User2: "question"
+4. Bot2: "answer"
+5. User3: "@Bot1 continue"
+```
+
+**Bot1 收到消息 5 时的 context**:
+- User2 的消息 (prefix: `user:User2`)
+- Bot2 的消息 (prefix: `bot:Bot2`)
+- User3 的消息 (prefix: `user:User3`)
+
+Bot1 看到 Bot2 的回复，可以基于它继续对话。
+
+### 技术细节
+
+**用户信息缓存**: `slack_users` 表缓存用户和 bot 信息
+- 使用 `users.info` API 统一获取（对 bot 的 User ID 也有效）
+- 无需单独的 `slack_bots` 表
+- Bot 消息总是有 `user` 字段（bot 的 User ID）
+
+**Mention 保留**: 所有 `@mention` 保持原样
+- 格式：`<@USERID>` → `@DisplayName`
+- 包括 bot mentions，让每个 bot 都能看到被 @ 的对象
 
 ## 设计原则
 
