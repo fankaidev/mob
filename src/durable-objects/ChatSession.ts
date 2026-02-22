@@ -266,17 +266,29 @@ export class ChatSession {
    * Save messages to D1 database
    */
   private async saveMessagesToDb(messagesToSave: AgentMessage[]) {
-    await this.env.DB.batch([
-      // Insert messages (prefix is included in the JSON content)
-      ...messagesToSave.map(msg =>
-        this.env.DB.prepare(
-          'INSERT INTO messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)'
-        ).bind(this.sessionId, msg.role, JSON.stringify(msg), Date.now())
-      ),
-      // Update session timestamp
-      this.env.DB.prepare('UPDATE sessions SET updated_at = ? WHERE id = ?')
-        .bind(Date.now(), this.sessionId),
-    ])
+    if (messagesToSave.length === 0) {
+      console.warn('[DO] saveMessagesToDb called with empty array')
+      return
+    }
+
+    try {
+      const result = await this.env.DB.batch([
+        // Insert messages (prefix is included in the JSON content)
+        ...messagesToSave.map(msg =>
+          this.env.DB.prepare(
+            'INSERT INTO messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)'
+          ).bind(this.sessionId, msg.role, JSON.stringify(msg), Date.now())
+        ),
+        // Update session timestamp
+        this.env.DB.prepare('UPDATE sessions SET updated_at = ? WHERE id = ?')
+          .bind(Date.now(), this.sessionId),
+      ])
+
+      console.log(`[DO] Batch write result:`, result.map((r: any) => ({ success: r.success, error: r.error })))
+    } catch (error) {
+      console.error('[DO] Failed to save messages to DB:', error)
+      throw error
+    }
   }
 
   /**
@@ -738,8 +750,10 @@ export class ChatSession {
 
         // If contextMessages provided, save them to DB and update in-memory state first
         if (contextMessages && contextMessages.length > 0) {
+          console.log(`[DO] Saving ${contextMessages.length} context messages to DB`)
           await this.saveMessagesToDb(contextMessages)
           this.messages = [...this.messages, ...contextMessages]
+          console.log(`[DO] Context messages saved, total messages now: ${this.messages.length}`)
         }
 
         // Create agent with existing messages
@@ -798,11 +812,24 @@ export class ChatSession {
           assistantPrefix
         )
 
+        console.log(`[DO] Processing ${newMessages.length} new messages (oldCount: ${oldMessageCount}, newCount: ${agent.state.messages.length})`)
+        console.log(`[DO] New messages:`, JSON.stringify(newMessages.map(m => ({
+          role: m.role,
+          prefix: m.prefix,
+          textLength: m.content?.[0] && typeof m.content[0] !== 'string' && 'text' in m.content[0] ? m.content[0].text?.length : 0
+        }))))
+
         // Update in-memory messages
         this.messages = [...this.messages, ...newMessages]
 
         // Save only new messages to database
-        await this.saveMessagesToDb(newMessages)
+        if (newMessages.length > 0) {
+          console.log(`[DO] Saving ${newMessages.length} messages to DB`)
+          await this.saveMessagesToDb(newMessages)
+          console.log(`[DO] Messages saved successfully`)
+        } else {
+          console.warn('[DO] No new messages to save!')
+        }
 
         // Save thread mapping
         await this.env.DB.prepare(`
