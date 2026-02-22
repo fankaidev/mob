@@ -309,8 +309,15 @@ async function getThreadContext(
         rawContextMessages.push(msg)
       }
     }
+  } else {
+    // No lastMessageTs - this is the bot's first time in this thread
+    // Collect all messages except the current one
+    for (const msg of threadMessages) {
+      if (msg.ts !== currentMessageTs && (msg.user || msg.bot_id)) {
+        rawContextMessages.push(msg)
+      }
+    }
   }
-  // If no lastMessageTs (new thread), contextMessages will be empty - which is correct for first interaction
 
   // Resolve all user IDs (including bots) to names
   const userIdToName = await resolveAllUserMentionsInMessages(
