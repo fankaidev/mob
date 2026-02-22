@@ -139,25 +139,37 @@ slack.post('/events', async (c) => {
       sessionId = generateSessionId('slack')
     }
 
-    // Get DO stub and call it (fire-and-forget)
+    console.log(`[Worker] Delegating to DO, session: ${sessionId}, threadKey: ${threadKey}`)
+
+    // Get DO stub and call it
     const doId = c.env.CHAT_SESSION.idFromName(sessionId)
     const stub = c.env.CHAT_SESSION.get(doId)
 
-    // Don't wait for result - let DO handle everything
-    stub.fetch('http://fake-host/slack-event', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Session-Id': sessionId,
-      },
-      body: JSON.stringify({
-        appConfig,
-        event,
-        threadKey,
+    // Use waitUntil to ensure DO receives the request (but don't wait for DO to finish processing)
+    c.executionCtx.waitUntil(
+      stub.fetch('http://fake-host/slack-event', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Session-Id': sessionId,
+        },
+        body: JSON.stringify({
+          appConfig,
+          event,
+          threadKey,
+        })
       })
-    }).catch(err => {
-      console.error('[Worker] Failed to call DO:', err)
-    })
+      .then(response => {
+        if (!response.ok) {
+          console.error(`[Worker] DO returned error: ${response.status}`)
+        } else {
+          console.log(`[Worker] DO accepted event successfully`)
+        }
+      })
+      .catch(err => {
+        console.error('[Worker] Failed to call DO:', err)
+      })
+    )
 
     // Return immediately to Slack
     return c.json({ ok: true })
