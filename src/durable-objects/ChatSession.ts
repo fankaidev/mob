@@ -31,6 +31,7 @@ export class ChatSession {
   private messages: AgentMessage[] = []
   private initialized = false
   private mountableFs: MountableFs | null = null
+  private processingQueue: Promise<void> = Promise.resolve()  // Queue for serial processing
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state
@@ -318,10 +319,15 @@ export class ChatSession {
     // POST /slack-event - Handle Slack event (fire-and-forget from Worker)
     if (request.method === 'POST' && url.pathname === '/slack-event') {
       const payload = await request.json() as any
-      // Handle in background, return immediately
-      this.handleSlackEvent(payload).catch(error => {
-        console.error('Slack event handling error in DO:', error)
-      })
+
+      // Queue the event for serial processing to prevent race conditions
+      this.processingQueue = this.processingQueue
+        .then(() => this.handleSlackEvent(payload))
+        .catch(error => {
+          console.error('[DO] Slack event handling error:', error)
+        })
+
+      // Return immediately
       return new Response(JSON.stringify({ ok: true }), {
         headers: { 'Content-Type': 'application/json' }
       })
