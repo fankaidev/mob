@@ -359,6 +359,126 @@ export class ChatSession {
       })
     }
 
+    // POST /read-file - Read a file (for cron-handler/TaskExecutor)
+    if (request.method === 'POST' && url.pathname === '/read-file') {
+      const { path } = await request.json() as { path: string }
+      if (!path) {
+        return new Response(JSON.stringify({ error: 'path is required' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        })
+      }
+
+      await this.initializeFilesystem()
+      try {
+        const content = await this.mountableFs!.readFile(path, 'utf8')
+        return new Response(content as string, {
+          headers: { 'Content-Type': 'text/plain' }
+        })
+      } catch (error) {
+        return new Response(JSON.stringify({ error: 'File not found' }), {
+          status: 404,
+          headers: { 'Content-Type': 'application/json' }
+        })
+      }
+    }
+
+    // POST /write-file - Write a file (for cron-handler/TaskExecutor)
+    if (request.method === 'POST' && url.pathname === '/write-file') {
+      const { path, content } = await request.json() as { path: string; content: string }
+      if (!path) {
+        return new Response(JSON.stringify({ error: 'path is required' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        })
+      }
+
+      await this.initializeFilesystem()
+      try {
+        await this.mountableFs!.writeFile(path, content || '')
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { 'Content-Type': 'application/json' }
+        })
+      } catch (error) {
+        return new Response(JSON.stringify({ error: String(error) }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' }
+        })
+      }
+    }
+
+    // POST /delete-file - Delete a file (for TaskExecutor)
+    if (request.method === 'POST' && url.pathname === '/delete-file') {
+      const { path } = await request.json() as { path: string }
+      if (!path) {
+        return new Response(JSON.stringify({ error: 'path is required' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        })
+      }
+
+      await this.initializeFilesystem()
+      try {
+        await this.mountableFs!.rm(path)
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { 'Content-Type': 'application/json' }
+        })
+      } catch (error) {
+        return new Response(JSON.stringify({ error: String(error) }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' }
+        })
+      }
+    }
+
+    // POST /list - List directory contents (for cron-handler/TaskExecutor)
+    if (request.method === 'POST' && url.pathname === '/list') {
+      const { path } = await request.json() as { path: string }
+      if (!path) {
+        return new Response(JSON.stringify({ error: 'path is required' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        })
+      }
+
+      await this.initializeFilesystem()
+      try {
+        const entries = await this.mountableFs!.readdir(path)
+        return new Response(JSON.stringify(entries), {
+          headers: { 'Content-Type': 'application/json' }
+        })
+      } catch (error) {
+        return new Response(JSON.stringify({ error: 'Directory not found' }), {
+          status: 404,
+          headers: { 'Content-Type': 'application/json' }
+        })
+      }
+    }
+
+    // POST /mkdir - Create directory (for cron-handler)
+    if (request.method === 'POST' && url.pathname === '/mkdir') {
+      const { path } = await request.json() as { path: string }
+      if (!path) {
+        return new Response(JSON.stringify({ error: 'path is required' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        })
+      }
+
+      await this.initializeFilesystem()
+      try {
+        await this.mountableFs!.mkdir(path, { recursive: true })
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { 'Content-Type': 'application/json' }
+        })
+      } catch (error) {
+        // Ignore if already exists
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { 'Content-Type': 'application/json' }
+        })
+      }
+    }
+
     // POST /chat - Send message and get streaming response
     if (request.method === 'POST' && url.pathname === '/chat') {
       const { message, llmConfigName, contextMessages, systemPrompt, assistantPrefix } = await request.json() as {
