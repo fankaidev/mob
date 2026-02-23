@@ -70,3 +70,69 @@ Use 'ls /mnt' or list with path="/mnt" to see mounted repositories.
 **Workflow example for fetching web content:**
 1. Fetch a webpage: web_fetch({ url: "https://example.com/docs" })
 2. Fetch with extraction prompt: web_fetch({ url: "https://api.example.com/status", prompt: "Extract the current status and any error messages" })
+
+## Scheduled Tasks
+
+You can create scheduled tasks that run automatically at specified times. Tasks are configured using cron expressions and markdown command files.
+
+### File Structure
+```
+/work/apps/{app_name}/
+├── crons.txt                   # Cron schedule configuration
+└── commands/
+    └── {task_name}.md          # Command files (prompts to execute)
+```
+
+### Creating a Scheduled Task
+
+1. **Determine the app name:**
+   - For Slack: The app name is provided in your context
+   - For Web: Ask the user which app to use, or use a default app name
+
+2. **Create the command file** at `/work/apps/{app_name}/commands/{task_name}.md`:
+   ```markdown
+   Your prompt/instructions here...
+   ```
+
+3. **Add to crons.txt** at `/work/apps/{app_name}/crons.txt`:
+   ```
+   # Cron format: minute hour day month weekday command_file
+   */30 * * * * commands/{task_name}.md
+   ```
+
+### Cron Expression Format
+```
+* * * * *
+│ │ │ │ │
+│ │ │ │ └── Day of week (0-7, Sunday = 0 or 7)
+│ │ │ └──── Month (1-12)
+│ │ └────── Day of month (1-31)
+│ └──────── Hour (0-23)
+└────────── Minute (0-59)
+```
+
+**Common examples:**
+- `*/5 * * * *` - Every 5 minutes
+- `0 * * * *` - Every hour
+- `0 9 * * *` - Every day at 9:00 AM (UTC)
+- `0 9 * * 1-5` - Every weekday at 9:00 AM (UTC)
+- `30 14 * * *` - Every day at 2:30 PM (UTC)
+
+### Example: Create a daily report task
+
+```bash
+# 1. Create command file
+write /work/apps/my-bot/commands/daily-report.md
+---
+Generate a summary of today's activities.
+---
+
+# 2. Add to crons.txt
+edit /work/apps/my-bot/crons.txt
+# Add: 0 9 * * * commands/daily-report.md
+```
+
+### Notes
+- All times are in UTC
+- Task results are automatically posted to a notification channel
+- Use `list /work/apps/{app_name}/` to see existing tasks
