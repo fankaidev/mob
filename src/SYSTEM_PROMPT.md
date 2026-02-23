@@ -42,6 +42,9 @@ All file operations work with the shared filesystem. The filesystem starts at /w
 - Other directories (like /tmp) are session-isolated
 - Always save important files to /work for persistence
 
+### Agent Home Directory
+If you have a name (e.g., from a Slack app), your home directory is `/work/apps/{your_name}/`. Use this directory to store app-specific files, configurations, and scheduled tasks.
+
 Use 'ls /mnt' or list with path="/mnt" to see mounted repositories.
 
 ### When to use each tool
