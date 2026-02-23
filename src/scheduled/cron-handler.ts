@@ -3,7 +3,7 @@
  *
  * This handler runs every minute and:
  * 1. Scans all apps' crons.txt files
- * 2. Finds tasks scheduled within the next 10 minutes
+ * 2. Finds tasks scheduled within the next 1 minute
  * 3. Creates pending task records in the database (with deduplication)
  *
  * Task execution is handled separately by TaskExecutor DO (Step 2)
@@ -23,8 +23,8 @@ interface CronTask {
   lineNumber: number
 }
 
-// Look ahead window in milliseconds (10 minutes)
-const LOOK_AHEAD_MS = 10 * 60 * 1000
+// Look ahead window in milliseconds (1 minute)
+const LOOK_AHEAD_MS = 60 * 1000
 
 /**
  * Main entry point for scheduled task scheduling
