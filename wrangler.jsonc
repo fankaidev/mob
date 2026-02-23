@@ -39,7 +39,12 @@
       "database_name": "mob-session",
       "database_id": "18e26266-e2b7-469b-aca4-e70891a1a6e2"
     }
-  ]
+  ],
+
+  // Cron triggers for scheduled tasks
+  "triggers": {
+    "crons": ["* * * * *"]  // Run every minute
+  }
 
   // Note: Run `npm run setup:d1` to create the database
   // and automatically update the database_id

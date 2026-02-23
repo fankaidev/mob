@@ -1,0 +1,15 @@
+# Scheduled Tasks Configuration
+#
+# Format: <cron-expression> <command-file-path>
+# Standard cron format: minute hour day month weekday
+#
+# Examples:
+# */5 * * * * commands/check.md        # Every 5 minutes
+# 0 9 * * 1-5 commands/report.md       # 9 AM on weekdays
+# 0 */6 * * * commands/cleanup.md      # Every 6 hours
+
+# Daily code quality check (every 30 minutes)
+*/30 * * * * commands/code-check.md
+
+# Morning report (9 AM every day)
+0 9 * * * commands/morning-report.md
