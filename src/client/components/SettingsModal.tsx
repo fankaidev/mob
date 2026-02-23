@@ -7,6 +7,7 @@ interface LLMConfig {
   base_url: string
   api_key?: string
   model: string
+  system_prompt?: string
   created_at?: number
   updated_at?: number
 }
@@ -20,7 +21,6 @@ interface SlackApp {
   signing_secret?: string
   bot_user_id?: string
   llm_config_name: string
-  system_prompt?: string
   created_at?: number
   updated_at?: number
 }
@@ -187,7 +187,6 @@ export function SettingsModal({ isOpen, onClose, onSelectConfig, selectedConfigN
         if (signing_secret) body.signing_secret = signing_secret
       }
       if (editingSlackApp.team_id) body.team_id = editingSlackApp.team_id
-      if (editingSlackApp.system_prompt !== undefined) body.system_prompt = editingSlackApp.system_prompt
 
       const response = await fetch(url, {
         method,
@@ -404,6 +403,17 @@ export function SettingsModal({ isOpen, onClose, onSelectConfig, selectedConfigN
                     />
                   </div>
 
+                  <div className="mb-4">
+                    <label className="block font-medium mb-2 text-[#374151]">System Prompt (Optional)</label>
+                    <textarea
+                      className="w-full px-3 py-3 border border-[#d1d5db] rounded-lg text-base focus:outline-none focus:border-[#2563eb] focus:shadow-[0_0_0_3px_rgba(37,99,235,0.1)] font-mono text-sm"
+                      value={editingLlmConfig.system_prompt || ''}
+                      onChange={(e) => setEditingLlmConfig({ ...editingLlmConfig, system_prompt: e.target.value })}
+                      placeholder="You are a helpful assistant..."
+                      rows={6}
+                    />
+                  </div>
+
                   <div className="flex gap-2 justify-end mt-6 pt-4 border-t border-[#e5e7eb]">
                     <button
                       className="px-4 py-2 bg-[#f3f4f6] text-[#374151] border-none rounded-lg text-base cursor-pointer font-medium hover:bg-[#e5e7eb]"
@@ -545,17 +555,6 @@ export function SettingsModal({ isOpen, onClose, onSelectConfig, selectedConfigN
                       value={editingSlackApp.team_id || ''}
                       onChange={(e) => setEditingSlackApp({ ...editingSlackApp, team_id: e.target.value })}
                       placeholder="T0XXXXXXX"
-                    />
-                  </div>
-
-                  <div className="mb-4">
-                    <label className="block font-medium mb-2 text-[#374151]">Custom System Prompt (optional)</label>
-                    <textarea
-                      className="w-full px-3 py-3 border border-[#d1d5db] rounded-lg text-base font-[inherit] resize-y min-h-[80px] focus:outline-none focus:border-[#2563eb] focus:shadow-[0_0_0_3px_rgba(37,99,235,0.1)]"
-                      value={editingSlackApp.system_prompt || ''}
-                      onChange={(e) => setEditingSlackApp({ ...editingSlackApp, system_prompt: e.target.value })}
-                      placeholder="Override the default system prompt for this bot..."
-                      rows={4}
                     />
                   </div>
 

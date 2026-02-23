@@ -92,6 +92,7 @@ export interface LLMConfig {
   base_url: string
   api_key: string
   model: string
+  system_prompt: string | null
   created_at: number
   updated_at: number
 }
@@ -105,7 +106,6 @@ export interface SlackAppConfig {
   signing_secret: string
   bot_user_id: string | null
   llm_config_name: string
-  system_prompt: string | null
   created_at: number
   updated_at: number
 }
