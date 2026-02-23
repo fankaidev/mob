@@ -2,7 +2,6 @@ import { Type, type Static } from '@sinclair/typebox'
 import { Bash } from 'just-bash'
 import type { IFileSystem } from '../fs'
 import type { AgentTool } from '../pi-agent/types'
-import { ghCommand, gitCommand } from './bash-commands'
 
 // ============================================================================
 // Process shim for just-bash (Workers don't have full process object)
@@ -38,19 +37,14 @@ Available commands include:
 - File operations: cat, ls, cp, mv, rm, mkdir, touch, head, tail, grep, sed, awk, find
 - Text processing: echo, printf, wc, sort, uniq, tr, cut
 - System info: pwd, whoami, env
-- Git: git status, git add, git commit, git push, git checkout, git branch, git log
-- GitHub CLI: gh pr create
 
 Examples:
 - List files: ls -la
 - View file: cat README.md
 - Search: grep "error" log.txt
 - Pipe commands: cat data.txt | wc -l
-- Git workflow: git checkout -b fix/typo && git add . && git commit -m "Fix typo" && git push
-- Create PR: gh pr create --title "Fix typo" --body "Fixed a typo"
 
-Note: The filesystem is shared with mounted repositories. Use 'ls /mnt' to see mounted repos.
-Git commands require GITHUB_TOKEN environment variable for push and PR operations.`
+Note: The filesystem is persistent. Files under /work are shared across all sessions.`
 
 interface BashToolOptions {
   sessionId: string
@@ -68,11 +62,10 @@ export async function createBashInstance(options: BashToolOptions): Promise<Bash
   // Ensure process shim is available for just-bash
   ensureProcessShim()
 
-  // Create bash with external filesystem (MountableFs) and custom commands
+  // Create bash with external filesystem (D1FileSystem)
   const bashInstance = new Bash({
     cwd: '/work',
     fs: fs,
-    customCommands: [gitCommand, ghCommand],
     network: {
       dangerouslyAllowFullInternetAccess: true,
     },
