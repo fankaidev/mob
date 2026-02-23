@@ -60,5 +60,6 @@ export default {
   }
 }
 
-// Export Durable Object
+// Export Durable Objects
 export { ChatSession } from './durable-objects/ChatSession'
+export { TaskExecutor } from './durable-objects/TaskExecutor'

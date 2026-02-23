@@ -20,6 +20,10 @@
       {
         "name": "CHAT_SESSION",
         "class_name": "ChatSession"
+      },
+      {
+        "name": "TASK_EXECUTOR",
+        "class_name": "TaskExecutor"
       }
     ]
   },
@@ -29,6 +33,10 @@
     {
       "tag": "v1",
       "new_sqlite_classes": ["ChatSession"]
+    },
+    {
+      "tag": "v2",
+      "new_classes": ["TaskExecutor"]
     }
   ],
 

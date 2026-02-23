@@ -2,6 +2,39 @@
 
 This directory contains example configuration files for scheduled tasks.
 
+## Architecture
+
+The scheduled task system uses a two-step architecture for reliability:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Step 1: Cron Worker (every minute)                         │
+│  - Scans /work/apps/{app_name}/crons.txt for all apps       │
+│  - Schedules tasks for the next 10 minutes                  │
+│  - Deduplicates using unique constraint                     │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│  task_executions table                                      │
+│  status: pending → running → success/error/timeout          │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Step 2: TaskExecutor DO (continuous polling)               │
+│  - Queries pending tasks where scheduled_at <= now          │
+│  - Executes tasks one by one (single instance)              │
+│  - Updates status and records output                        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Benefits:**
+- **No duplicate execution**: Unique constraint prevents scheduling the same task twice
+- **No missed tasks**: Tasks are persisted in DB; TaskExecutor polls continuously
+- **Observable**: Pending tasks visible before execution for debugging
+- **Serial execution**: Single DO instance prevents resource contention
+
 ## Setup
 
 1. **Copy files to your app directory:**
@@ -102,10 +135,17 @@ Read and execute the command in /work/apps/my-bot/commands/code-check.md
 Query the database to see execution history:
 
 ```sql
-SELECT * FROM task_executions
+-- View recent executions
+SELECT id, task_file, status, scheduled_at, started_at, duration_ms
+FROM task_executions
 WHERE app_id = 'YOUR_APP_ID'
-ORDER BY started_at DESC
+ORDER BY scheduled_at DESC
 LIMIT 10;
+
+-- View pending tasks (not yet executed)
+SELECT * FROM task_executions
+WHERE status = 'pending'
+ORDER BY scheduled_at ASC;
 ```
 
 ## Troubleshooting

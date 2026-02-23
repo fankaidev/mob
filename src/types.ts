@@ -4,5 +4,6 @@ export interface Env {
   Bindings: {
     DB: D1Database
     CHAT_SESSION: DurableObjectNamespace
+    TASK_EXECUTOR: DurableObjectNamespace
   }
 }

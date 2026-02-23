@@ -1,20 +1,20 @@
 /**
- * Simplified Cron Handler
+ * Cron Handler - Task Scheduler (Step 1)
  *
- * Configuration-as-Code approach:
- * - Commands stored as markdown files in /work/apps/{app_name}/commands/
- * - Schedule defined in /work/apps/{app_name}/crons.txt
- * - Only supports Agent command execution
+ * This handler runs every minute and:
+ * 1. Scans all apps' crons.txt files
+ * 2. Finds tasks scheduled within the next 10 minutes
+ * 3. Creates pending task records in the database (with deduplication)
+ *
+ * Task execution is handled separately by TaskExecutor DO (Step 2)
  */
 
 import type { Env } from '../types'
-import { parseExpression } from 'cron-parser'
+import { CronExpressionParser } from 'cron-parser'
 
 interface SlackApp {
   app_id: string
   app_name: string
-  llm_config_name: string
-  system_prompt: string | null
 }
 
 interface CronTask {
@@ -23,8 +23,11 @@ interface CronTask {
   lineNumber: number
 }
 
+// Look ahead window in milliseconds (10 minutes)
+const LOOK_AHEAD_MS = 10 * 60 * 1000
+
 /**
- * Main entry point for scheduled tasks
+ * Main entry point for scheduled task scheduling
  */
 export async function handleScheduledTrigger(env: Env['Bindings']): Promise<void> {
   const now = Date.now()
@@ -33,7 +36,7 @@ export async function handleScheduledTrigger(env: Env['Bindings']): Promise<void
 
   try {
     // Get all Slack apps
-    const result = await env.DB.prepare('SELECT * FROM slack_apps').all<SlackApp>()
+    const result = await env.DB.prepare('SELECT app_id, app_name FROM slack_apps').all<SlackApp>()
     const apps = result.results
 
     if (apps.length === 0) {
@@ -44,8 +47,11 @@ export async function handleScheduledTrigger(env: Env['Bindings']): Promise<void
     console.log(`[Cron] Found ${apps.length} app(s)`)
 
     // Process each app's cron tasks
-    const executions = apps.map(app => processAppCrons(env, app, now))
-    await Promise.allSettled(executions)
+    const schedules = apps.map(app => scheduleAppTasks(env, app, now))
+    await Promise.allSettled(schedules)
+
+    // Trigger TaskExecutor DO to process pending tasks
+    await triggerTaskExecutor(env)
 
   } catch (error) {
     console.error('[Cron] Error in scheduled trigger:', error)
@@ -53,9 +59,9 @@ export async function handleScheduledTrigger(env: Env['Bindings']): Promise<void
 }
 
 /**
- * Process cron tasks for a single app
+ * Schedule tasks for a single app
  */
-async function processAppCrons(
+async function scheduleAppTasks(
   env: Env['Bindings'],
   app: SlackApp,
   now: number
@@ -63,7 +69,7 @@ async function processAppCrons(
   try {
     const cronsPath = `/work/apps/${app.app_name}/crons.txt`
 
-    // Get session for this app (use __shared__ session for file access)
+    // Get session for file access (use __shared__ session)
     const sessionId = '__shared__'
     const doId = env.CHAT_SESSION.idFromName(sessionId)
     const stub = env.CHAT_SESSION.get(doId)
@@ -76,8 +82,7 @@ async function processAppCrons(
     })
 
     if (!readResponse.ok) {
-      // No crons.txt file for this app
-      console.log(`[Cron] No crons.txt found for app ${app.app_name}`)
+      // No crons.txt file for this app - skip silently
       return
     }
 
@@ -87,38 +92,38 @@ async function processAppCrons(
     const tasks = parseCronsFile(cronsContent)
 
     if (tasks.length === 0) {
-      console.log(`[Cron] No tasks defined for app ${app.app_name}`)
       return
     }
 
-    console.log(`[Cron] App ${app.app_name}: found ${tasks.length} task(s)`)
+    console.log(`[Cron] App ${app.app_name}: found ${tasks.length} task definition(s)`)
 
-    // Check which tasks should run now
-    const tasksToRun = tasks.filter(task => shouldRunNow(task.cronExpression, now))
+    // Find all scheduled times within the look-ahead window
+    let scheduledCount = 0
+    for (const task of tasks) {
+      const scheduledTimes = getScheduledTimes(task.cronExpression, now, LOOK_AHEAD_MS)
 
-    if (tasksToRun.length === 0) {
-      console.log(`[Cron] App ${app.app_name}: no tasks to run at this time`)
-      return
+      for (const scheduledAt of scheduledTimes) {
+        const scheduled = await scheduleTask(env.DB, app.app_id, task, scheduledAt)
+        if (scheduled) {
+          scheduledCount++
+        }
+      }
     }
 
-    console.log(`[Cron] App ${app.app_name}: running ${tasksToRun.length} task(s)`)
-
-    // Execute tasks in parallel
-    const executions = tasksToRun.map(task =>
-      executeTask(env, app, task, sessionId, stub)
-    )
-    await Promise.allSettled(executions)
+    if (scheduledCount > 0) {
+      console.log(`[Cron] App ${app.app_name}: scheduled ${scheduledCount} task(s)`)
+    }
 
   } catch (error) {
-    console.error(`[Cron] Error processing app ${app.app_name}:`, error)
+    console.error(`[Cron] Error scheduling tasks for app ${app.app_name}:`, error)
   }
 }
 
 /**
  * Parse crons.txt file format:
- * # Comment
- * */5 * * * * commands/check.md
- * 0 9 * * * commands/report.md
+ *   # Comment
+ *   *\/5 * * * * commands/check.md
+ *   0 9 * * * commands/report.md
  */
 function parseCronsFile(content: string): CronTask[] {
   const tasks: CronTask[] = []
@@ -157,315 +162,85 @@ function parseCronsFile(content: string): CronTask[] {
 }
 
 /**
- * Check if a cron expression matches the current time
+ * Get all scheduled times for a cron expression within a time window
+ * Returns timestamps at minute precision (seconds/ms set to 0)
  */
-function shouldRunNow(cronExpression: string, now: number): boolean {
+function getScheduledTimes(cronExpression: string, now: number, windowMs: number): number[] {
+  const times: number[] = []
+
   try {
-    const interval = parseExpression(cronExpression, {
+    const interval = CronExpressionParser.parse(cronExpression, {
       currentDate: new Date(now)
     })
 
-    // Get the previous scheduled time
-    const prev = interval.prev()
-    const prevTime = prev.toDate().getTime()
+    const endTime = now + windowMs
 
-    // If the previous scheduled time was within the last minute, we should run
-    const diffMs = now - prevTime
-    return diffMs >= 0 && diffMs < 60000 // Within last 60 seconds
+    // Iterate through future scheduled times
+    while (interval.hasNext()) {
+      const next = interval.next()
+      const nextTime = next.toDate().getTime()
+
+      if (nextTime > endTime) {
+        break
+      }
+
+      // Normalize to minute precision
+      const minuteTime = Math.floor(nextTime / 60000) * 60000
+      times.push(minuteTime)
+    }
 
   } catch (error) {
     console.error(`[Cron] Invalid cron expression "${cronExpression}":`, error)
-    return false
   }
+
+  return times
 }
 
 /**
- * Execute a single task
+ * Schedule a task in the database (with deduplication)
+ * Returns true if task was scheduled, false if already exists
  */
-async function executeTask(
-  env: Env['Bindings'],
-  app: SlackApp,
-  task: CronTask,
-  sessionId: string,
-  stub: DurableObjectStub
-): Promise<void> {
-  const startTime = Date.now()
-  let executionId: number | null = null
-
-  try {
-    console.log(`[Cron] Executing task: ${task.taskFile} (app: ${app.app_name})`)
-
-    // Create execution record
-    executionId = await createExecution(env.DB, app.app_id, task)
-
-    // Read command file
-    const commandPath = `/work/apps/${app.app_name}/${task.taskFile}`
-    const readResponse = await stub.fetch('http://fake-host/read-file', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: commandPath })
-    })
-
-    if (!readResponse.ok) {
-      throw new Error(`Command file not found: ${commandPath}`)
-    }
-
-    const commandContent = await readResponse.text()
-
-    // Parse markdown file (optional front matter)
-    const { prompt, metadata } = parseCommandFile(commandContent)
-
-    // Execute Agent command
-    const output = await executeAgentCommand(
-      env,
-      app,
-      stub,
-      sessionId,
-      prompt,
-      metadata
-    )
-
-    // Mark execution as success
-    const duration = Date.now() - startTime
-    await completeExecution(env.DB, executionId, 'success', output, null, duration, sessionId)
-
-    console.log(`[Cron] Task completed successfully: ${task.taskFile}`)
-
-  } catch (error) {
-    const duration = Date.now() - startTime
-    const errorMessage = error instanceof Error ? error.message : String(error)
-
-    console.error(`[Cron] Task failed: ${task.taskFile}`, error)
-
-    if (executionId) {
-      await completeExecution(env.DB, executionId, 'error', null, errorMessage, duration, sessionId)
-    }
-  }
-}
-
-/**
- * Parse command markdown file with optional front matter
- *
- * Format:
- * ---
- * channel: C1234567890
- * thread_ts: 1234567890.123456
- * ---
- *
- * Command prompt goes here...
- */
-function parseCommandFile(content: string): {
-  prompt: string
-  metadata: Record<string, string>
-} {
-  const metadata: Record<string, string> = {}
-  let prompt = content
-
-  // Check for front matter
-  const frontMatterMatch = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/)
-
-  if (frontMatterMatch) {
-    const [, frontMatter, body] = frontMatterMatch
-    prompt = body.trim()
-
-    // Parse YAML-like front matter (simple key: value pairs)
-    frontMatter.split('\n').forEach(line => {
-      const match = line.match(/^(\w+):\s*(.+)$/)
-      if (match) {
-        const [, key, value] = match
-        metadata[key] = value.trim()
-      }
-    })
-  }
-
-  return { prompt, metadata }
-}
-
-/**
- * Execute Agent command via ChatSession DO
- */
-async function executeAgentCommand(
-  env: Env['Bindings'],
-  app: SlackApp,
-  stub: DurableObjectStub,
-  sessionId: string,
-  prompt: string,
-  metadata: Record<string, string>
-): Promise<string> {
-  // Create user message
-  const userMessage = {
-    role: 'user',
-    content: [{ type: 'text', text: prompt }],
-    timestamp: Date.now(),
-    prefix: `cron:${app.app_name}`
-  }
-
-  // Call ChatSession DO
-  const chatRequest = {
-    message: userMessage,
-    llmConfigName: app.llm_config_name,
-    systemPrompt: app.system_prompt || undefined
-  }
-
-  const response = await stub.fetch('http://fake-host/chat', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Session-Id': sessionId
-    },
-    body: JSON.stringify(chatRequest)
-  })
-
-  if (!response.ok) {
-    throw new Error(`ChatSession request failed: ${response.status}`)
-  }
-
-  // Collect SSE response
-  const fullResponse = await collectSSEResponse(response)
-
-  // Optionally post to Slack if metadata includes channel
-  if (metadata.channel && fullResponse) {
-    await postToSlack(env, app, metadata.channel, fullResponse, metadata.thread_ts)
-  }
-
-  return fullResponse
-}
-
-/**
- * Collect Server-Sent Events response
- */
-async function collectSSEResponse(response: Response): Promise<string> {
-  const reader = response.body?.getReader()
-  if (!reader) return ''
-
-  const decoder = new TextDecoder()
-  let result = ''
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-
-      const chunk = decoder.decode(value, { stream: true })
-      const lines = chunk.split('\n')
-
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6)
-          if (data === '[DONE]') continue
-
-          try {
-            const parsed = JSON.parse(data)
-            if (parsed.type === 'text') {
-              result += parsed.text
-            }
-          } catch {
-            // Ignore parse errors
-          }
-        }
-      }
-    }
-  } finally {
-    reader.releaseLock()
-  }
-
-  return result
-}
-
-/**
- * Post message to Slack
- */
-async function postToSlack(
-  env: Env['Bindings'],
-  app: SlackApp,
-  channel: string,
-  text: string,
-  threadTs?: string
-): Promise<void> {
-  try {
-    // Get bot token from app config
-    const appConfig = await env.DB.prepare(
-      'SELECT bot_token FROM slack_apps WHERE app_id = ?'
-    ).bind(app.app_id).first<{ bot_token: string }>()
-
-    if (!appConfig) {
-      throw new Error(`App config not found: ${app.app_id}`)
-    }
-
-    // Post to Slack
-    const body: any = { channel, text }
-    if (threadTs) {
-      body.thread_ts = threadTs
-    }
-
-    const response = await fetch('https://slack.com/api/chat.postMessage', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${appConfig.bot_token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(body)
-    })
-
-    const result = await response.json() as any
-
-    if (!result.ok) {
-      throw new Error(`Slack API error: ${result.error}`)
-    }
-
-    console.log(`[Cron] Posted result to Slack channel ${channel}`)
-
-  } catch (error) {
-    console.error('[Cron] Failed to post to Slack:', error)
-    // Don't throw - posting to Slack is optional
-  }
-}
-
-/**
- * Create execution record in database
- */
-async function createExecution(
+async function scheduleTask(
   db: D1Database,
   appId: string,
-  task: CronTask
-): Promise<number> {
-  const result = await db.prepare(`
-    INSERT INTO task_executions (
-      app_id, task_file, cron_expression, started_at, status
-    ) VALUES (?, ?, ?, ?, 'success')
-  `).bind(appId, task.taskFile, task.cronExpression, Date.now()).run()
+  task: CronTask,
+  scheduledAt: number
+): Promise<boolean> {
+  try {
+    // Insert with unique constraint - will fail if already exists
+    await db.prepare(`
+      INSERT INTO task_executions (app_id, task_file, cron_expression, scheduled_at, status)
+      VALUES (?, ?, ?, ?, 'pending')
+    `).bind(appId, task.taskFile, task.cronExpression, scheduledAt).run()
 
-  return result.meta.last_row_id as number
+    console.log(`[Cron] Scheduled: ${task.taskFile} at ${new Date(scheduledAt).toISOString()}`)
+    return true
+
+  } catch (error: any) {
+    // Unique constraint violation means task already scheduled - this is expected
+    if (error.message?.includes('UNIQUE constraint failed')) {
+      return false
+    }
+    throw error
+  }
 }
 
 /**
- * Complete execution record
+ * Trigger TaskExecutor DO to process pending tasks
  */
-async function completeExecution(
-  db: D1Database,
-  executionId: number,
-  status: string,
-  output: string | null,
-  errorMessage: string | null,
-  duration: number,
-  sessionId: string
-): Promise<void> {
-  await db.prepare(`
-    UPDATE task_executions
-    SET finished_at = ?,
-        status = ?,
-        output = ?,
-        error_message = ?,
-        duration_ms = ?,
-        session_id = ?
-    WHERE id = ?
-  `).bind(
-    Date.now(),
-    status,
-    output,
-    errorMessage,
-    duration,
-    sessionId,
-    executionId
-  ).run()
+async function triggerTaskExecutor(env: Env['Bindings']): Promise<void> {
+  try {
+    const doId = env.TASK_EXECUTOR.idFromName('singleton')
+    const stub = env.TASK_EXECUTOR.get(doId)
+
+    // Fire and forget - don't wait for response
+    stub.fetch('http://fake-host/process', {
+      method: 'POST'
+    }).catch(err => {
+      console.error('[Cron] Failed to trigger TaskExecutor:', err)
+    })
+
+  } catch (error) {
+    console.error('[Cron] Error triggering TaskExecutor:', error)
+  }
 }
