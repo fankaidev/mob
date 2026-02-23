@@ -22,5 +22,4 @@ export type {
 
 export { InMemoryFs } from 'just-bash'
 export { MountableFs, type MountableFsOptions } from './mountable-fs'
-export { createGitFs } from './git-fs'
 export { D1FileSystem } from './d1-fs'

@@ -5,18 +5,15 @@
  * - Provides strong consistency for real-time chat
  * - Uses D1 for persistent storage
  * - Manages conversation history and streaming responses
- * - Supports git repository mounting for code browsing
  */
 
 import type { DurableObjectState } from '@cloudflare/workers-types'
 import { D1FileSystem, MountableFs } from '../lib/fs'
-import { restoreMounts } from '../lib/fs/mount-store'
 import { Agent } from '../lib/pi-agent'
 import type { AgentMessage } from '../lib/pi-agent/types'
 import type { Model } from '../lib/pi-ai/types'
 import { createBashInstance, createBashTool } from '../lib/tools/bash'
 import { createEditTool, createListTool, createReadTool, createWriteTool } from '../lib/tools/file-tools'
-import { createListMountsTool, createMountTool, createUnmountTool } from '../lib/tools/mount-tools'
 import { createWebFetchTool } from '../lib/tools/web-fetch'
 import SYSTEM_PROMPT from '../SYSTEM_PROMPT.md'
 
@@ -98,23 +95,9 @@ export class ChatSession {
       ).bind(SHARED_SESSION_ID, now, now, 'active').run()
     }
 
-    const dirStart = Date.now()
     await baseFs.initializeDefaultDirectories()
-    // console.log(`[Perf] Initialize directories: ${Date.now() - dirStart}ms`)
 
     this.mountableFs = new MountableFs({ base: baseFs })
-
-    // Create /mnt directory for git mounts
-    try {
-      await this.mountableFs.mkdir('/mnt', { recursive: true })
-    } catch {
-      // Ignore if already exists
-    }
-
-    // Restore persisted mounts
-    const mountStart = Date.now()
-    await restoreMounts(this.env.DB, this.sessionId, this.mountableFs)
-    // console.log(`[Perf] Restore mounts: ${Date.now() - mountStart}ms`)
 
     console.log(`[Perf] Total filesystem init: ${Date.now() - startTime}ms`)
   }
@@ -155,20 +138,10 @@ export class ChatSession {
     const editTool = createEditTool(bash)
     const listTool = createListTool(bash)
 
-    // Create mount tools with shared MountableFs
-    const mountToolOptions = {
-      sessionId: this.sessionId,
-      db: this.env.DB,
-      mountableFs: this.mountableFs!,
-    }
-    const mountTool = createMountTool(mountToolOptions)
-    const unmountTool = createUnmountTool(mountToolOptions)
-    const listMountsTool = createListMountsTool(mountToolOptions)
-
     // Create web fetch tool
     const webFetchTool = createWebFetchTool()
 
-    return [readTool, writeTool, editTool, listTool, bashTool, mountTool, unmountTool, listMountsTool, webFetchTool]
+    return [readTool, writeTool, editTool, listTool, bashTool, webFetchTool]
   }
 
   /**

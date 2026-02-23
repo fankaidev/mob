@@ -22,7 +22,6 @@
     "cron-parser": "^5.5.0",
     "fast-xml-parser": "^5.3.5",
     "hono": "^4.11.1",
-    "isomorphic-git": "^1.27.1",
     "just-bash": "^2.10.2",
     "lucide-react": "^0.575.0",
     "partial-json": "^0.1.7",
