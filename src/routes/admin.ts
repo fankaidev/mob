@@ -145,11 +145,11 @@ admin.delete('/llm-configs/:name', async (c) => {
 
     // Check if any Slack apps are using this config
     const apps = await c.env.DB.prepare(
-      'SELECT app_name FROM slack_apps WHERE llm_config_name = ?'
-    ).bind(name).all<{ app_name: string }>()
+      'SELECT llm_config_name FROM slack_apps WHERE llm_config_name = ?'
+    ).bind(name).all<{ llm_config_name: string }>()
 
     if (apps.results.length > 0) {
-      const appNames = apps.results.map(a => a.app_name).join(', ')
+      const appNames = apps.results.map(a => a.llm_config_name).join(', ')
       return c.json({
         error: `Cannot delete: config is used by Slack apps: ${appNames}`
       }, 400)
@@ -178,9 +178,9 @@ admin.delete('/llm-configs/:name', async (c) => {
 admin.get('/slack-apps', async (c) => {
   try {
     const result = await c.env.DB.prepare(`
-      SELECT id, app_id, team_id, app_name, bot_user_id, llm_config_name,
+      SELECT id, app_id, team_id, bot_user_id, llm_config_name,
              created_at, updated_at
-      FROM slack_apps ORDER BY app_name
+      FROM slack_apps ORDER BY llm_config_name
     `).all<Omit<SlackAppConfig, 'bot_token' | 'signing_secret'>>()
 
     return c.json({ apps: result.results })
@@ -195,7 +195,7 @@ admin.get('/slack-apps/:appId', async (c) => {
   try {
     const appId = c.req.param('appId')
     const result = await c.env.DB.prepare(
-      `SELECT id, app_id, team_id, app_name, bot_user_id, llm_config_name,
+      `SELECT id, app_id, team_id, bot_user_id, llm_config_name,
               created_at, updated_at
        FROM slack_apps WHERE app_id = ?`
     ).bind(appId).first<Omit<SlackAppConfig, 'bot_token' | 'signing_secret'>>()
@@ -216,14 +216,13 @@ admin.post('/slack-apps', async (c) => {
   try {
     const body = await c.req.json<{
       app_id: string
-      app_name: string
       bot_token: string
       signing_secret: string
       llm_config_name: string
       team_id?: string
     }>()
 
-    if (!body.app_id || !body.app_name || !body.bot_token || !body.signing_secret || !body.llm_config_name) {
+    if (!body.app_id || !body.bot_token || !body.signing_secret || !body.llm_config_name) {
       return c.json({ error: 'Missing required fields' }, 400)
     }
 
@@ -238,12 +237,11 @@ admin.post('/slack-apps', async (c) => {
 
     const now = Date.now()
     await c.env.DB.prepare(`
-      INSERT INTO slack_apps (app_id, team_id, app_name, bot_token, signing_secret, llm_config_name, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO slack_apps (app_id, team_id, bot_token, signing_secret, llm_config_name, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `).bind(
       body.app_id,
       body.team_id || null,
-      body.app_name,
       body.bot_token,
       body.signing_secret,
       body.llm_config_name,
@@ -266,7 +264,6 @@ admin.put('/slack-apps/:appId', async (c) => {
   try {
     const appId = c.req.param('appId')
     const body = await c.req.json<{
-      app_name?: string
       bot_token?: string
       signing_secret?: string
       llm_config_name?: string
@@ -277,10 +274,6 @@ admin.put('/slack-apps/:appId', async (c) => {
     const updates: string[] = []
     const values: any[] = []
 
-    if (body.app_name) {
-      updates.push('app_name = ?')
-      values.push(body.app_name)
-    }
     if (body.bot_token) {
       updates.push('bot_token = ?')
       values.push(body.bot_token)

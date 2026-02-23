@@ -16,7 +16,6 @@ interface SlackApp {
   id?: number
   app_id: string
   team_id?: string
-  app_name: string
   bot_token?: string
   signing_secret?: string
   bot_user_id?: string
@@ -160,8 +159,8 @@ export function SettingsModal({ isOpen, onClose, onSelectConfig, selectedConfigN
   const handleSaveSlackApp = async () => {
     if (!editingSlackApp) return
 
-    const { app_id, app_name, bot_token, signing_secret, llm_config_name } = editingSlackApp
-    if (!app_id || !app_name || !llm_config_name) {
+    const { app_id, bot_token, signing_secret, llm_config_name } = editingSlackApp
+    if (!app_id || !llm_config_name) {
       setStatus({ type: 'error', message: 'Please fill in all required fields' })
       return
     }
@@ -177,7 +176,7 @@ export function SettingsModal({ isOpen, onClose, onSelectConfig, selectedConfigN
         : `/api/admin/slack-apps/${app_id}`
       const method = isNewSlackApp ? 'POST' : 'PUT'
 
-      const body: any = { app_name, llm_config_name }
+      const body: any = { llm_config_name }
       if (isNewSlackApp) {
         body.app_id = app_id
         body.bot_token = bot_token
@@ -483,7 +482,7 @@ export function SettingsModal({ isOpen, onClose, onSelectConfig, selectedConfigN
             <div>
               {editingSlackApp ? (
                 <div className="p-2">
-                  <h3 className="text-lg mb-4 text-[#1f2937]">{isNewSlackApp ? 'New Slack App' : `Edit: ${editingSlackApp.app_name}`}</h3>
+                  <h3 className="text-lg mb-4 text-[#1f2937]">{isNewSlackApp ? 'New Slack App' : `Edit: ${editingSlackApp.llm_config_name}`}</h3>
 
                   <div className="mb-4">
                     <label className="block font-medium mb-2 text-[#374151]">App ID *</label>
@@ -496,17 +495,6 @@ export function SettingsModal({ isOpen, onClose, onSelectConfig, selectedConfigN
                       placeholder="A0XXXXXXX"
                     />
                     <small className="block mt-1 text-[#6b7280] text-sm">Find this in your Slack App settings</small>
-                  </div>
-
-                  <div className="mb-4">
-                    <label className="block font-medium mb-2 text-[#374151]">App Name *</label>
-                    <input
-                      type="text"
-                      className="w-full px-3 py-3 border border-[#d1d5db] rounded-lg text-base focus:outline-none focus:border-[#2563eb] focus:shadow-[0_0_0_3px_rgba(37,99,235,0.1)]"
-                      value={editingSlackApp.app_name}
-                      onChange={(e) => setEditingSlackApp({ ...editingSlackApp, app_name: e.target.value })}
-                      placeholder="My Claude Bot"
-                    />
                   </div>
 
                   <div className="mb-4">
@@ -578,7 +566,7 @@ export function SettingsModal({ isOpen, onClose, onSelectConfig, selectedConfigN
                   <button
                     className="w-full px-3 py-3 mb-4 bg-[#f3f4f6] text-[#374151] border-2 border-dashed border-[#d1d5db] rounded-lg cursor-pointer font-medium hover:bg-[#e5e7eb] hover:border-[#9ca3af]"
                     onClick={() => {
-                      setEditingSlackApp({ app_id: '', app_name: '', llm_config_name: '' })
+                      setEditingSlackApp({ app_id: '', llm_config_name: '' })
                       setIsNewSlackApp(true)
                     }}
                   >
@@ -592,7 +580,7 @@ export function SettingsModal({ isOpen, onClose, onSelectConfig, selectedConfigN
                       {slackApps.map((app) => (
                         <div key={app.app_id} className="p-4 border border-[#e5e7eb] rounded-lg">
                           <div className="flex justify-between items-center mb-1">
-                            <span className="font-semibold text-[#1f2937]">{app.app_name}</span>
+                            <span className="font-semibold text-[#1f2937]">{app.llm_config_name}</span>
                             <div className="flex gap-2">
                               <button
                                 className="px-3 py-1 text-xs bg-[#f3f4f6] text-[#374151] border-none rounded-lg cursor-pointer hover:bg-[#e5e7eb]"

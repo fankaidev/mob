@@ -79,11 +79,10 @@ CREATE TABLE IF NOT EXISTS slack_apps (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   app_id TEXT NOT NULL UNIQUE,         -- Slack App ID (e.g., A0XXXXXXX)
   team_id TEXT,                        -- Slack Workspace ID
-  app_name TEXT NOT NULL,              -- Display name (e.g., "Claude Bot")
   bot_token TEXT NOT NULL,             -- Bot token (xoxb-xxx)
   signing_secret TEXT NOT NULL,        -- Slack signing secret for request verification
   bot_user_id TEXT,                    -- Bot's Slack User ID (cached after first lookup)
-  llm_config_name TEXT NOT NULL,       -- Associated LLM config name (system_prompt now in llm_configs)
+  llm_config_name TEXT NOT NULL UNIQUE, -- Associated LLM config name (used as identity, one-to-one with app)
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   FOREIGN KEY (llm_config_name) REFERENCES llm_configs(name)

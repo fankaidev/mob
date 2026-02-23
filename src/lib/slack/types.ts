@@ -101,7 +101,6 @@ export interface SlackAppConfig {
   id: number
   app_id: string
   team_id: string | null
-  app_name: string
   bot_token: string
   signing_secret: string
   bot_user_id: string | null

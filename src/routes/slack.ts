@@ -365,7 +365,7 @@ async function callChatSession(
     message: currentUserMessage,
     llmConfigName: appConfig.llm_config_name,
     contextMessages: contextMessages.length > 0 ? contextMessages : undefined,
-    assistantPrefix: `bot:${appConfig.app_name}`,
+    assistantPrefix: `bot:${appConfig.llm_config_name}`,
   }
 
   // Call ChatSession
