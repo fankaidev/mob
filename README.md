@@ -30,14 +30,52 @@
 
 ### 技术栈
 
-| 层级 | 技术 |
-|------|------|
+| 层级         | 技术                       |
+| ------------ | -------------------------- |
 | **Frontend** | React 19, TypeScript, Vite |
-| **Backend** | Hono, Cloudflare Workers |
-| **状态管理** | Durable Objects |
-| **数据存储** | Cloudflare D1 (SQLite) |
-| **AI** | pi-mono (流式 + 工具调用) |
-| **集成** | Slack Events API, isomorphic-git, just-bash |
+| **Backend**  | Hono, Cloudflare Workers   |
+| **状态管理** | Durable Objects            |
+| **数据存储** | Cloudflare D1 (SQLite)     |
+| **AI**       | pi-mono (流式 + 工具调用)  |
+| **文件操作** | isomorphic-git, just-bash  |
+| **集成**     | Slack API                  |
+
+## 核心概念
+
+### App (Slack App Configuration)
+
+在本项目中，**"App"** 指的是 **Slack 应用配置**，存储在 `slack_apps` 表中。
+
+- 每个 App 代表一个独立的 Slack bot
+- 包含：bot token、signing secret、关联的 LLM 配置、自定义 system prompt
+- 一个 Cloudflare Worker 实例可以同时服务多个 Slack apps
+- 通过 `app_id` (Slack 的 App ID，如 `A01XXXXX`) 唯一标识
+
+**示例场景**：
+```
+claude-bot    (app_id: A01ABC, 使用 Claude Sonnet)
+gpt-helper    (app_id: A02DEF, 使用 GPT-4)
+code-reviewer (app_id: A03GHI, 使用 Claude Opus, 自定义 prompt)
+```
+
+这些 bot 可以部署在同一个 Worker 中，共享基础架构但保持配置独立。
+
+### Session (会话)
+
+- 每个会话是一个独立的对话上下文
+- Web UI 中的会话：通过 UI 手动创建
+- Slack 中的会话：自动从 thread 映射创建（格式：`slack:{app_id}:{channel}:{thread_ts}`）
+- 每个 session 对应一个 ChatSession Durable Object 实例
+
+### 异步任务处理
+
+当前系统使用 `executionCtx.waitUntil()` 处理异步任务：
+
+- **Slack 消息处理**：webhook 收到请求后立即返回 200（3 秒内），实际处理在后台异步执行
+- **避免超时**：Slack 要求 3 秒内响应，否则会重试 webhook
+- **错误处理**：后台任务失败会发送错误消息到 Slack thread
+
+**注意**：当前不支持定时任务（无 cron triggers 配置）。
 
 ## 核心功能
 
@@ -49,17 +87,17 @@
 ### 2. Agent 工具调用
 Agent 支持以下工具:
 
-| 工具 | 功能 |
-|------|------|
-| `read` | 读取文件内容 |
-| `write` | 创建或覆盖文件 |
-| `edit` | 查找替换编辑 |
-| `list` | 列出目录内容 |
-| `bash` | 执行 bash 命令 |
-| `web_fetch` | 获取网页内容 |
-| `mount` | 挂载 Git 仓库 |
-| `unmount` | 卸载挂载点 |
-| `list-mounts` | 列出当前挂载 |
+| 工具          | 功能           |
+| ------------- | -------------- |
+| `read`        | 读取文件内容   |
+| `write`       | 创建或覆盖文件 |
+| `edit`        | 查找替换编辑   |
+| `list`        | 列出目录内容   |
+| `bash`        | 执行 bash 命令 |
+| `web_fetch`   | 获取网页内容   |
+| `mount`       | 挂载 Git 仓库  |
+| `unmount`     | 卸载挂载点     |
+| `list-mounts` | 列出当前挂载   |
 
 > 💡 **直接执行 bash**: 消息以 `!` 开头可以绕过 AI 直接执行 bash 命令，例如 `!ls -la`
 
@@ -132,24 +170,18 @@ src/
 
 项目使用 8 张表:
 
-| 表名 | 用途 |
-|------|------|
-| `sessions` | 会话元数据 |
-| `messages` | 聊天消息存储 |
-| `files` | 虚拟文件系统 |
-| `mounts` | Git 挂载配置 |
-| `llm_configs` | LLM 配置 |
-| `slack_apps` | Slack 应用配置 |
+| 表名                   | 用途                                                     |
+| ---------------------- | -------------------------------------------------------- |
+| `sessions`             | 会话元数据                                               |
+| `messages`             | 聊天消息存储                                             |
+| `files`                | 虚拟文件系统                                             |
+| `mounts`               | Git 挂载配置                                             |
+| `llm_configs`          | LLM 配置                                                 |
+| `slack_apps`           | Slack 应用配置                                           |
 | `slack_thread_mapping` | Slack 线程到会话映射 (含 `last_message_ts` 用于增量加载) |
-| `slack_users` | Slack 用户和 Bot 信息缓存 (通过 `users.info` API) |
+| `slack_users`          | Slack 用户和 Bot 信息缓存 (通过 `users.info` API)        |
 
-详见 `schema.sql` 和 `migrations/` 目录。
-
-### 重要字段说明
-
-**`slack_thread_mapping.thread_key`**: 格式为 `slack:{app_id}:{channel}:{thread_ts}`，确保每个 bot 独立 session
-
-**`slack_thread_mapping.last_message_ts`**: Slack 消息的 timestamp，用于只加载新消息，避免重复处理
+详见 `schema.sql`。
 
 ## API 端点
 
@@ -218,13 +250,6 @@ npm run build      # Vite 构建前端到 public/static/
 # 初始化数据库（首次部署）
 npx wrangler d1 execute mob-session --local --file=schema.sql
 npx wrangler d1 execute mob-session --remote --file=schema.sql
-
-# 执行迁移脚本（更新数据库结构）
-npx wrangler d1 execute mob-session --local --file=migrations/001_add_last_message_ts.sql
-npx wrangler d1 execute mob-session --remote --file=migrations/001_add_last_message_ts.sql
-```
-
-⚠️ **重要**: 迁移脚本使用 `ALTER TABLE` 添加列，不会影响现有数据。
 
 ## 多 Bot 场景
 
@@ -322,6 +347,61 @@ if (event.sessionId !== sessionId) {
 - 避免数据不一致
 - 保持代码的可预测性
 - 提高系统的可维护性
+
+## 架构决策
+
+### 为什么使用 Durable Objects？
+
+- **强一致性**：提供 read-after-write 一致性，避免并发冲突
+- **有状态计算层**：每个 session 一个 DO 实例，管理 Agent 执行状态
+- **与 D1 配合**：DO 处理实时状态，D1 提供持久化存储
+- **自动扩展**：Cloudflare 自动管理 DO 实例的创建和销毁
+
+
+### Slack 消息处理流程
+
+```
+Slack → POST /api/slack/events
+         ↓
+    [1. 验证签名 HMAC-SHA256]
+         ↓
+    [2. 立即返回 200 OK] ← 必须在 3 秒内
+         ↓
+    [3. waitUntil: 异步处理]
+         ↓
+    [4. 查询 last_message_ts]
+         ↓
+    [5. 加载新的 thread 消息]
+         ↓
+    [6. 获取或创建 ChatSession DO]
+         ↓
+    [7. 执行 Agent 对话循环]
+         ↓
+    [8. 回复 Slack thread]
+         ↓
+    [9. 更新 last_message_ts]
+```
+
+## Cloudflare Workers 平台限制
+
+了解这些限制对设计新功能至关重要：
+
+| 限制项            | 免费版 | 付费版  | 说明                           |
+| ----------------- | ------ | ------- | ------------------------------ |
+| **请求 CPU 时间** | 10ms   | 30s     | 单次 HTTP 请求的 CPU 执行时间  |
+| **Cron CPU 时间** | -      | 30s     | 定时任务的 CPU 执行时间        |
+| **Cron 墙钟时间** | -      | 15 分钟 | 定时任务的总运行时间（含 I/O） |
+| **Cron 最小间隔** | -      | 1 分钟  | 支持标准 cron 表达式           |
+| **D1 单查询大小** | 1MB    | 1MB     | 单个查询返回的最大数据量       |
+| **D1 事务时间**   | 30s    | 30s     | 单个事务的最大执行时间         |
+| **DO 内存**       | 128MB  | 128MB   | 单个 DO 实例的最大内存         |
+| **请求体大小**    | 100MB  | 500MB   | 上传文件大小限制               |
+
+**设计影响**：
+- 长时间运行的任务需要拆分为多个小任务
+- Bash 命令超时设置应考虑 CPU 时间限制
+- 大量数据查询需要分页处理
+- Agent 对话循环需要有合理的超时机制
 
 ## 已知问题
 
