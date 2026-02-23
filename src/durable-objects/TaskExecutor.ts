@@ -195,6 +195,10 @@ export class TaskExecutor {
       // Parse markdown file (optional front matter)
       const { prompt, metadata } = this.parseCommandFile(commandContent)
 
+      // Send "task started" notification to Slack
+      const notifyChannel = metadata.channel || DEFAULT_NOTIFICATION_CHANNEL
+      const startMessageTs = await this.sendTaskStartNotification(app, notifyChannel, task)
+
       // Execute Agent command with timeout
       const output = await this.executeWithTimeout(
         this.executeAgentCommand(stub, sessionId, app, prompt, metadata),
@@ -211,9 +215,10 @@ export class TaskExecutor {
 
       console.log(`[TaskExecutor] Task ${task.id} completed successfully in ${duration}ms`)
 
-      // Send completion notification to Slack
-      const notifyChannel = metadata.channel || DEFAULT_NOTIFICATION_CHANNEL
-      await this.sendTaskNotification(app, notifyChannel, task, 'success', output, duration, metadata.thread_ts)
+      // Send completion result as thread reply
+      if (startMessageTs) {
+        await this.sendTaskResultToThread(app, notifyChannel, startMessageTs, 'success', output, duration)
+      }
 
     } catch (error) {
       const duration = Date.now() - startTime
@@ -222,14 +227,17 @@ export class TaskExecutor {
 
       console.error(`[TaskExecutor] Task ${task.id} failed:`, error)
 
-      // Send error notification to Slack
+      // Send error notification to Slack (as new message since we may not have startMessageTs)
       try {
         const appForNotify = await this.env.DB.prepare(`
           SELECT app_id, app_name, bot_token, llm_config_name, system_prompt FROM slack_apps WHERE app_id = ?
         `).bind(task.app_id).first<SlackApp>()
 
         if (appForNotify) {
-          await this.sendTaskNotification(appForNotify, DEFAULT_NOTIFICATION_CHANNEL, task, isTimeout ? 'timeout' : 'error', errorMessage, duration)
+          const errorStartTs = await this.sendTaskStartNotification(appForNotify, DEFAULT_NOTIFICATION_CHANNEL, task)
+          if (errorStartTs) {
+            await this.sendTaskResultToThread(appForNotify, DEFAULT_NOTIFICATION_CHANNEL, errorStartTs, isTimeout ? 'timeout' : 'error', errorMessage, duration)
+          }
         }
       } catch {
         // Ignore notification errors
@@ -393,13 +401,14 @@ export class TaskExecutor {
 
   /**
    * Post message to Slack
+   * Returns the message timestamp (ts) for thread replies
    */
   private async postToSlack(
     app: SlackApp,
     channel: string,
     text: string,
     threadTs?: string
-  ): Promise<void> {
+  ): Promise<string | undefined> {
     try {
       const body: Record<string, string> = { channel, text }
       if (threadTs) {
@@ -415,34 +424,51 @@ export class TaskExecutor {
         body: JSON.stringify(body)
       })
 
-      const result = await response.json() as { ok: boolean; error?: string }
+      const result = await response.json() as { ok: boolean; error?: string; ts?: string }
 
       if (!result.ok) {
         throw new Error(`Slack API error: ${result.error}`)
       }
 
-      console.log(`[TaskExecutor] Posted result to Slack channel ${channel}`)
+      console.log(`[TaskExecutor] Posted message to Slack channel ${channel}`)
+      return result.ts
 
     } catch (error) {
       console.error('[TaskExecutor] Failed to post to Slack:', error)
       // Don't throw - posting to Slack is optional
+      return undefined
     }
   }
 
   /**
-   * Send task completion/failure notification to Slack
+   * Send "task started" notification to Slack
+   * Returns the message timestamp for thread replies
    */
-  private async sendTaskNotification(
+  private async sendTaskStartNotification(
     app: SlackApp,
     channel: string,
-    task: PendingTask,
+    task: PendingTask
+  ): Promise<string | undefined> {
+    const message = `🚀 *Scheduled task started*\n` +
+      `• Task: \`${task.task_file}\`\n` +
+      `• Scheduled: ${new Date(task.scheduled_at).toISOString()}`
+
+    return await this.postToSlack(app, channel, message)
+  }
+
+  /**
+   * Send task result as a thread reply
+   */
+  private async sendTaskResultToThread(
+    app: SlackApp,
+    channel: string,
+    threadTs: string,
     status: 'success' | 'error' | 'timeout',
     output: string,
-    durationMs: number,
-    threadTs?: string
+    durationMs: number
   ): Promise<void> {
     const statusEmoji = status === 'success' ? '✅' : status === 'timeout' ? '⏱️' : '❌'
-    const statusText = status === 'success' ? 'completed' : status === 'timeout' ? 'timed out' : 'failed'
+    const statusText = status === 'success' ? 'Completed' : status === 'timeout' ? 'Timed out' : 'Failed'
     const durationSec = (durationMs / 1000).toFixed(1)
 
     // Truncate output if too long
@@ -451,11 +477,8 @@ export class TaskExecutor {
       ? output.slice(0, maxOutputLen) + '\n... (truncated)'
       : output
 
-    const message = `${statusEmoji} *Scheduled task ${statusText}*\n` +
-      `• Task: \`${task.task_file}\`\n` +
-      `• Duration: ${durationSec}s\n` +
-      `• Scheduled: ${new Date(task.scheduled_at).toISOString()}\n\n` +
-      (status === 'success' ? `*Output:*\n${truncatedOutput}` : `*Error:*\n\`\`\`\n${truncatedOutput}\n\`\`\``)
+    const message = `${statusEmoji} *${statusText}* (${durationSec}s)\n\n` +
+      (status === 'success' ? truncatedOutput : `\`\`\`\n${truncatedOutput}\n\`\`\``)
 
     await this.postToSlack(app, channel, message, threadTs)
   }
