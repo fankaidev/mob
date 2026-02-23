@@ -15,6 +15,11 @@
  * - Single instance guarantees no concurrent execution of the same task
  * - File-based state is durable and inspectable
  * - Status visible from filename without reading content
+ *
+ * Safety:
+ * - Processes max 1 task per alarm cycle (avoids 15-minute wall clock timeout)
+ * - Each task has 12-minute timeout (1 × 12min = 12min < 15min limit)
+ * - If more tasks exist, immediately reschedules next alarm (1s interval)
  */
 
 import type { DurableObjectState } from '@cloudflare/workers-types'
@@ -65,7 +70,10 @@ const IDLE_POLL_INTERVAL_MS = 30000 // 30 seconds
 const ACTIVE_POLL_INTERVAL_MS = 1000 // 1 second
 
 // Maximum execution time per task
-const TASK_TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes
+const TASK_TIMEOUT_MS = 12 * 60 * 1000 // 12 minutes (allows for longer tasks)
+
+// Maximum tasks to process per alarm cycle (to avoid 15-minute wall clock timeout)
+const MAX_TASKS_PER_CYCLE = 1 // 1 task × 12 min = 12 min (safe margin under 15min limit)
 
 export class TaskExecutor {
   private state: DurableObjectState
@@ -123,11 +131,12 @@ export class TaskExecutor {
     this.processing = true
 
     let foundTasks = false
+    let tasksProcessed = 0
 
     try {
       let hasMoreTasks = true
 
-      while (hasMoreTasks) {
+      while (hasMoreTasks && tasksProcessed < MAX_TASKS_PER_CYCLE) {
         // Get next pending task file
         const task = await this.getNextPendingTask()
 
@@ -141,6 +150,13 @@ export class TaskExecutor {
 
         // Execute the task
         await this.executeTask(task)
+        tasksProcessed++
+      }
+
+      // If we hit the limit, there might be more tasks to process
+      if (tasksProcessed >= MAX_TASKS_PER_CYCLE) {
+        console.log(`[TaskExecutor] Processed ${tasksProcessed} tasks, rescheduling immediately for remaining tasks`)
+        foundTasks = true // Force active polling
       }
 
       // Schedule next poll
