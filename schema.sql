@@ -6,7 +6,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
-  status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'completed', 'error'))
+  status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'completed', 'error')),
+  llm_config_name TEXT                 -- Records which LLM config was used for this session
 );
 
 -- Messages table - stores conversation history
@@ -21,6 +22,9 @@ CREATE TABLE IF NOT EXISTS messages (
 
 -- Index for efficient message queries
 CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id, created_at);
+
+-- Index for session LLM config lookups
+CREATE INDEX IF NOT EXISTS idx_sessions_llm_config ON sessions(llm_config_name);
 
 -- Files table - stores filesystem entries per session
 -- Supports files, directories, and symlinks
@@ -65,6 +69,7 @@ CREATE TABLE IF NOT EXISTS llm_configs (
   base_url TEXT NOT NULL,              -- API endpoint URL
   api_key TEXT NOT NULL,               -- API key (encrypted in production)
   model TEXT NOT NULL,                 -- Model ID
+  system_prompt TEXT,                  -- Optional: custom system prompt for this LLM config
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -74,12 +79,10 @@ CREATE TABLE IF NOT EXISTS slack_apps (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   app_id TEXT NOT NULL UNIQUE,         -- Slack App ID (e.g., A0XXXXXXX)
   team_id TEXT,                        -- Slack Workspace ID
-  app_name TEXT NOT NULL,              -- Display name (e.g., "Claude Bot")
   bot_token TEXT NOT NULL,             -- Bot token (xoxb-xxx)
   signing_secret TEXT NOT NULL,        -- Slack signing secret for request verification
   bot_user_id TEXT,                    -- Bot's Slack User ID (cached after first lookup)
-  llm_config_name TEXT NOT NULL,       -- Associated LLM config name
-  system_prompt TEXT,                  -- Optional: custom system prompt for this app
+  llm_config_name TEXT NOT NULL UNIQUE, -- Associated LLM config name (used as identity, one-to-one with app)
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   FOREIGN KEY (llm_config_name) REFERENCES llm_configs(name)

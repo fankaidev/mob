@@ -454,15 +454,14 @@ export class ChatSession {
 
     // POST /chat - Send message and get streaming response
     if (request.method === 'POST' && url.pathname === '/chat') {
-      const { message, llmConfigName, contextMessages, systemPrompt, assistantPrefix } = await request.json() as {
+      const { message, llmConfigName, contextMessages, assistantPrefix } = await request.json() as {
         message: AgentMessage  // Only accept AgentMessage format
         llmConfigName: string  // LLM config name (query from database)
         contextMessages?: AgentMessage[]
-        systemPrompt?: string
         assistantPrefix?: string  // Optional prefix for assistant messages (e.g., "bot:AppName")
       }
 
-      // Query LLM config from database
+      // Query LLM config from database (now includes system_prompt)
       const llmConfig = await this.env.DB.prepare(
         'SELECT * FROM llm_configs WHERE name = ?'
       ).bind(llmConfigName).first() as any
@@ -474,7 +473,7 @@ export class ChatSession {
         })
       }
 
-      const { base_url: baseUrl, api_key: apiKey, model, provider } = llmConfig
+      const { base_url: baseUrl, api_key: apiKey, model, provider, system_prompt: systemPrompt } = llmConfig
 
       // Extract text from message for validation and bash command check
       const messageText = typeof message.content === 'string'
@@ -550,7 +549,7 @@ export class ChatSession {
       const encoder = new TextEncoder()
 
       // Handle chat in background
-      this.handleChat(message, baseUrl, apiKey, model, provider, writer, encoder, contextMessages, systemPrompt, assistantPrefix).catch((error) => {
+      this.handleChat(message, baseUrl, apiKey, model, provider, writer, encoder, contextMessages, systemPrompt, assistantPrefix, llmConfigName).catch((error) => {
         console.error('Chat error:', error)
         writer.write(encoder.encode(`data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`))
         writer.close()
@@ -675,6 +674,7 @@ export class ChatSession {
    * @param contextMessages - Optional messages from external context (e.g., Slack thread history)
    * @param systemPrompt - Optional custom system prompt
    * @param assistantPrefix - Optional prefix for new assistant messages (e.g., "bot:AppName")
+   * @param llmConfigName - LLM config name to record in session
    */
   private async handleChat(
     message: AgentMessage,
@@ -686,7 +686,8 @@ export class ChatSession {
     encoder: TextEncoder,
     contextMessages?: AgentMessage[],
     systemPrompt?: string,
-    assistantPrefix?: string
+    assistantPrefix?: string,
+    llmConfigName?: string
   ) {
     try {
       // Initialize filesystem for chat (with tools)
@@ -751,6 +752,13 @@ export class ChatSession {
 
       // Save only new messages to database
       await this.saveMessagesToDb(newMessages)
+
+      // Update session with llm_config_name if provided
+      if (llmConfigName) {
+        await this.env.DB.prepare(
+          'UPDATE sessions SET llm_config_name = ?, updated_at = ? WHERE id = ?'
+        ).bind(llmConfigName, Date.now(), this.sessionId).run()
+      }
 
       // Send done signal
       await writer.write(encoder.encode('data: [DONE]\n\n'))

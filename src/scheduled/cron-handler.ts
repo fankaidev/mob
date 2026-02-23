@@ -22,7 +22,7 @@ import { CronExpressionParser } from 'cron-parser'
 
 interface SlackApp {
   app_id: string
-  app_name: string
+  llm_config_name: string
 }
 
 interface CronTask {
@@ -42,7 +42,7 @@ export async function handleScheduledTrigger(env: Env['Bindings'], ctx?: Executi
 
   try {
     // Get all Slack apps
-    const result = await env.DB.prepare('SELECT app_id, app_name FROM slack_apps').all<SlackApp>()
+    const result = await env.DB.prepare('SELECT app_id, llm_config_name FROM slack_apps').all<SlackApp>()
     const apps = result.results
 
     if (apps.length === 0) {
@@ -76,7 +76,7 @@ async function scheduleAppTasks(
   now: number
 ): Promise<void> {
   try {
-    const agentPath = `/work/agents/${app.app_name}`
+    const agentPath = `/work/agents/${app.llm_config_name}`
     const cronsPath = `${agentPath}/crons.txt`
 
     // Get session for file access (use __shared__ session)
@@ -132,11 +132,11 @@ async function scheduleAppTasks(
     }
 
     if (scheduledCount > 0) {
-      console.log(`[Cron] Scheduled ${scheduledCount} task(s) for ${app.app_name}`)
+      console.log(`[Cron] Scheduled ${scheduledCount} task(s) for ${app.llm_config_name}`)
     }
 
   } catch (error) {
-    console.error(`[Cron] Error scheduling tasks for app ${app.app_name}:`, error)
+    console.error(`[Cron] Error scheduling tasks for app ${app.llm_config_name}:`, error)
   }
 }
 

@@ -17,7 +17,7 @@ const admin = new Hono<Env>()
 admin.get('/llm-configs', async (c) => {
   try {
     const result = await c.env.DB.prepare(
-      'SELECT name, provider, base_url, model, created_at, updated_at FROM llm_configs ORDER BY name'
+      'SELECT name, provider, base_url, model, system_prompt, created_at, updated_at FROM llm_configs ORDER BY name'
     ).all<Omit<LLMConfig, 'api_key'>>()
 
     return c.json({ configs: result.results })
@@ -32,7 +32,7 @@ admin.get('/llm-configs/:name', async (c) => {
   try {
     const name = c.req.param('name')
     const result = await c.env.DB.prepare(
-      'SELECT name, provider, base_url, model, created_at, updated_at FROM llm_configs WHERE name = ?'
+      'SELECT name, provider, base_url, model, system_prompt, created_at, updated_at FROM llm_configs WHERE name = ?'
     ).bind(name).first<Omit<LLMConfig, 'api_key'>>()
 
     if (!result) {
@@ -55,6 +55,7 @@ admin.post('/llm-configs', async (c) => {
       base_url: string
       api_key: string
       model: string
+      system_prompt?: string
     }>()
 
     if (!body.name || !body.provider || !body.base_url || !body.api_key || !body.model) {
@@ -63,9 +64,9 @@ admin.post('/llm-configs', async (c) => {
 
     const now = Date.now()
     await c.env.DB.prepare(`
-      INSERT INTO llm_configs (name, provider, base_url, api_key, model, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).bind(body.name, body.provider, body.base_url, body.api_key, body.model, now, now).run()
+      INSERT INTO llm_configs (name, provider, base_url, api_key, model, system_prompt, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(body.name, body.provider, body.base_url, body.api_key, body.model, body.system_prompt || null, now, now).run()
 
     return c.json({ success: true, name: body.name })
   } catch (error: any) {
@@ -86,6 +87,7 @@ admin.put('/llm-configs/:name', async (c) => {
       base_url?: string
       api_key?: string
       model?: string
+      system_prompt?: string
     }>()
 
     // Build dynamic update query
@@ -107,6 +109,10 @@ admin.put('/llm-configs/:name', async (c) => {
     if (body.model) {
       updates.push('model = ?')
       values.push(body.model)
+    }
+    if (body.system_prompt !== undefined) {
+      updates.push('system_prompt = ?')
+      values.push(body.system_prompt || null)
     }
 
     if (updates.length === 0) {
@@ -139,11 +145,11 @@ admin.delete('/llm-configs/:name', async (c) => {
 
     // Check if any Slack apps are using this config
     const apps = await c.env.DB.prepare(
-      'SELECT app_name FROM slack_apps WHERE llm_config_name = ?'
-    ).bind(name).all<{ app_name: string }>()
+      'SELECT llm_config_name FROM slack_apps WHERE llm_config_name = ?'
+    ).bind(name).all<{ llm_config_name: string }>()
 
     if (apps.results.length > 0) {
-      const appNames = apps.results.map(a => a.app_name).join(', ')
+      const appNames = apps.results.map(a => a.llm_config_name).join(', ')
       return c.json({
         error: `Cannot delete: config is used by Slack apps: ${appNames}`
       }, 400)
@@ -172,10 +178,10 @@ admin.delete('/llm-configs/:name', async (c) => {
 admin.get('/slack-apps', async (c) => {
   try {
     const result = await c.env.DB.prepare(`
-      SELECT id, app_id, team_id, app_name, bot_user_id, llm_config_name,
+      SELECT id, app_id, team_id, bot_user_id, llm_config_name,
              created_at, updated_at
-      FROM slack_apps ORDER BY app_name
-    `).all<Omit<SlackAppConfig, 'bot_token' | 'signing_secret' | 'system_prompt'>>()
+      FROM slack_apps ORDER BY llm_config_name
+    `).all<Omit<SlackAppConfig, 'bot_token' | 'signing_secret'>>()
 
     return c.json({ apps: result.results })
   } catch (error) {
@@ -189,7 +195,7 @@ admin.get('/slack-apps/:appId', async (c) => {
   try {
     const appId = c.req.param('appId')
     const result = await c.env.DB.prepare(
-      `SELECT id, app_id, team_id, app_name, bot_user_id, llm_config_name, system_prompt,
+      `SELECT id, app_id, team_id, bot_user_id, llm_config_name,
               created_at, updated_at
        FROM slack_apps WHERE app_id = ?`
     ).bind(appId).first<Omit<SlackAppConfig, 'bot_token' | 'signing_secret'>>()
@@ -210,15 +216,13 @@ admin.post('/slack-apps', async (c) => {
   try {
     const body = await c.req.json<{
       app_id: string
-      app_name: string
       bot_token: string
       signing_secret: string
       llm_config_name: string
       team_id?: string
-      system_prompt?: string
     }>()
 
-    if (!body.app_id || !body.app_name || !body.bot_token || !body.signing_secret || !body.llm_config_name) {
+    if (!body.app_id || !body.bot_token || !body.signing_secret || !body.llm_config_name) {
       return c.json({ error: 'Missing required fields' }, 400)
     }
 
@@ -233,16 +237,14 @@ admin.post('/slack-apps', async (c) => {
 
     const now = Date.now()
     await c.env.DB.prepare(`
-      INSERT INTO slack_apps (app_id, team_id, app_name, bot_token, signing_secret, llm_config_name, system_prompt, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO slack_apps (app_id, team_id, bot_token, signing_secret, llm_config_name, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `).bind(
       body.app_id,
       body.team_id || null,
-      body.app_name,
       body.bot_token,
       body.signing_secret,
       body.llm_config_name,
-      body.system_prompt || null,
       now,
       now
     ).run()
@@ -262,22 +264,16 @@ admin.put('/slack-apps/:appId', async (c) => {
   try {
     const appId = c.req.param('appId')
     const body = await c.req.json<{
-      app_name?: string
       bot_token?: string
       signing_secret?: string
       llm_config_name?: string
       team_id?: string
-      system_prompt?: string
     }>()
 
     // Build dynamic update query
     const updates: string[] = []
     const values: any[] = []
 
-    if (body.app_name) {
-      updates.push('app_name = ?')
-      values.push(body.app_name)
-    }
     if (body.bot_token) {
       updates.push('bot_token = ?')
       values.push(body.bot_token)
@@ -302,10 +298,6 @@ admin.put('/slack-apps/:appId', async (c) => {
     if (body.team_id !== undefined) {
       updates.push('team_id = ?')
       values.push(body.team_id || null)
-    }
-    if (body.system_prompt !== undefined) {
-      updates.push('system_prompt = ?')
-      values.push(body.system_prompt || null)
     }
 
     if (updates.length === 0) {

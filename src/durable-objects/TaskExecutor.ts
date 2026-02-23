@@ -54,10 +54,8 @@ interface PendingTaskFile {
 
 interface SlackApp {
   app_id: string
-  app_name: string
   bot_token: string
   llm_config_name: string
-  system_prompt: string | null
 }
 
 // Default notification channel for task execution results
@@ -194,11 +192,11 @@ export class TaskExecutor {
     const stub = this.getChatSessionStub()
 
     // Get all Slack apps to know which agents to scan
-    const result = await this.env.DB.prepare('SELECT app_id, app_name FROM slack_apps').all<{ app_id: string; app_name: string }>()
+    const result = await this.env.DB.prepare('SELECT app_id, llm_config_name FROM slack_apps').all<{ app_id: string; llm_config_name: string }>()
     const apps = result.results
 
     for (const app of apps) {
-      const agentPath = `/work/agents/${app.app_name}`
+      const agentPath = `/work/agents/${app.llm_config_name}`
       const cronDir = `${agentPath}/cron`
 
       // List cron directory
@@ -298,7 +296,7 @@ export class TaskExecutor {
     try {
       // Get app config
       const app = await this.env.DB.prepare(`
-        SELECT app_id, app_name, bot_token, llm_config_name, system_prompt
+        SELECT app_id, bot_token, llm_config_name
         FROM slack_apps
         WHERE app_id = ?
       `).bind(metadata.app_id).first<SlackApp>()
@@ -332,8 +330,8 @@ export class TaskExecutor {
       const startMessageTs = await this.sendTaskStartNotification(app, notifyChannel, metadata)
 
       // Execute Agent command with timeout
-      // Each task gets its own session: cron:{app_name}:{timestamp}
-      const taskSessionId = `cron:${app.app_name}:${metadata.scheduled_at}`
+      // Each task gets its own session: cron:{llm_config_name}:{timestamp}
+      const taskSessionId = `cron:${app.llm_config_name}:${metadata.scheduled_at}`
       const taskStub = this.getSessionStub(taskSessionId)
       output = await this.executeWithTimeout(
         this.executeAgentCommand(taskStub, taskSessionId, app, prompt, commandMetadata),
@@ -357,7 +355,7 @@ export class TaskExecutor {
       // Send error notification to Slack
       try {
         const app = await this.env.DB.prepare(`
-          SELECT app_id, app_name, bot_token, llm_config_name, system_prompt FROM slack_apps WHERE app_id = ?
+          SELECT app_id, bot_token, llm_config_name FROM slack_apps WHERE app_id = ?
         `).bind(metadata.app_id).first<SlackApp>()
 
         if (app) {
@@ -467,14 +465,13 @@ export class TaskExecutor {
       role: 'user',
       content: [{ type: 'text', text: prompt }],
       timestamp: Date.now(),
-      prefix: `cron:${app.app_name}`
+      prefix: `cron:${app.llm_config_name}`
     }
 
     // Call ChatSession DO
     const chatRequest = {
       message: userMessage,
-      llmConfigName: app.llm_config_name,
-      systemPrompt: app.system_prompt || undefined
+      llmConfigName: app.llm_config_name
     }
 
     const response = await stub.fetch('http://fake-host/chat', {
