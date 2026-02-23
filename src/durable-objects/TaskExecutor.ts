@@ -36,6 +36,9 @@ interface SlackApp {
   system_prompt: string | null
 }
 
+// Default notification channel for task execution results
+const DEFAULT_NOTIFICATION_CHANNEL = 'C08J5HQU9FE'
+
 // Polling interval when idle (no pending tasks)
 const IDLE_POLL_INTERVAL_MS = 30000 // 30 seconds
 
@@ -208,12 +211,29 @@ export class TaskExecutor {
 
       console.log(`[TaskExecutor] Task ${task.id} completed successfully in ${duration}ms`)
 
+      // Send completion notification to Slack
+      const notifyChannel = metadata.channel || DEFAULT_NOTIFICATION_CHANNEL
+      await this.sendTaskNotification(app, notifyChannel, task, 'success', output, duration, metadata.thread_ts)
+
     } catch (error) {
       const duration = Date.now() - startTime
       const errorMessage = error instanceof Error ? error.message : String(error)
       const isTimeout = errorMessage.includes('timeout')
 
       console.error(`[TaskExecutor] Task ${task.id} failed:`, error)
+
+      // Send error notification to Slack
+      try {
+        const appForNotify = await this.env.DB.prepare(`
+          SELECT app_id, app_name, bot_token, llm_config_name, system_prompt FROM slack_apps WHERE app_id = ?
+        `).bind(task.app_id).first<SlackApp>()
+
+        if (appForNotify) {
+          await this.sendTaskNotification(appForNotify, DEFAULT_NOTIFICATION_CHANNEL, task, isTimeout ? 'timeout' : 'error', errorMessage, duration)
+        }
+      } catch {
+        // Ignore notification errors
+      }
 
       await this.env.DB.prepare(`
         UPDATE task_executions
@@ -407,6 +427,37 @@ export class TaskExecutor {
       console.error('[TaskExecutor] Failed to post to Slack:', error)
       // Don't throw - posting to Slack is optional
     }
+  }
+
+  /**
+   * Send task completion/failure notification to Slack
+   */
+  private async sendTaskNotification(
+    app: SlackApp,
+    channel: string,
+    task: PendingTask,
+    status: 'success' | 'error' | 'timeout',
+    output: string,
+    durationMs: number,
+    threadTs?: string
+  ): Promise<void> {
+    const statusEmoji = status === 'success' ? '✅' : status === 'timeout' ? '⏱️' : '❌'
+    const statusText = status === 'success' ? 'completed' : status === 'timeout' ? 'timed out' : 'failed'
+    const durationSec = (durationMs / 1000).toFixed(1)
+
+    // Truncate output if too long
+    const maxOutputLen = 2000
+    const truncatedOutput = output.length > maxOutputLen
+      ? output.slice(0, maxOutputLen) + '\n... (truncated)'
+      : output
+
+    const message = `${statusEmoji} *Scheduled task ${statusText}*\n` +
+      `• Task: \`${task.task_file}\`\n` +
+      `• Duration: ${durationSec}s\n` +
+      `• Scheduled: ${new Date(task.scheduled_at).toISOString()}\n\n` +
+      (status === 'success' ? `*Output:*\n${truncatedOutput}` : `*Error:*\n\`\`\`\n${truncatedOutput}\n\`\`\``)
+
+    await this.postToSlack(app, channel, message, threadTs)
   }
 
   /**
