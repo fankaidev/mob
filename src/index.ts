@@ -56,7 +56,7 @@ export default {
     env: Env['Bindings'],
     ctx: ExecutionContext
   ) => {
-    ctx.waitUntil(handleScheduledTrigger(env))
+    ctx.waitUntil(handleScheduledTrigger(env, ctx))
   }
 }
 

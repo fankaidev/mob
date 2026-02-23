@@ -86,6 +86,8 @@ export class TaskExecutor {
       // Start processing if not already running
       if (!this.processing) {
         this.processLoop()
+      } else {
+        console.log('[TaskExecutor] Already processing, skipping')
       }
       return new Response(JSON.stringify({ status: 'processing' }), {
         headers: { 'Content-Type': 'application/json' }
@@ -135,6 +137,7 @@ export class TaskExecutor {
         }
 
         foundTasks = true
+        console.log(`[TaskExecutor] Executing: ${task.filename}`)
 
         // Execute the task
         await this.executeTask(task)
@@ -185,7 +188,10 @@ export class TaskExecutor {
       // List cron directory
       const listResponse = await stub.fetch('http://fake-host/list', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Session-Id': '__shared__'
+        },
         body: JSON.stringify({ path: cronDir })
       })
 
@@ -197,27 +203,40 @@ export class TaskExecutor {
 
       for (const filename of files) {
         // Only look for .pending.json files
-        if (!filename.endsWith('.pending.json')) continue
+        if (!filename.endsWith('.pending.json')) {
+          continue
+        }
 
         // Parse filename: {timestamp}_{taskname}.pending.json
         const match = filename.match(/^(\d+)_(.+)\.pending\.json$/)
-        if (!match) continue
+        if (!match) {
+          console.warn(`[TaskExecutor] Invalid filename format: ${filename}`)
+          continue
+        }
 
         const scheduledAt = parseInt(match[1], 10)
         const prefix = `${match[1]}_${match[2]}`
 
         // Only execute tasks that are due
-        if (scheduledAt > now) continue
+        if (scheduledAt > now) {
+          continue
+        }
 
         // Read task metadata
         const taskPath = `${cronDir}/${filename}`
         const readResponse = await stub.fetch('http://fake-host/read-file', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Session-Id': '__shared__'
+          },
           body: JSON.stringify({ path: taskPath })
         })
 
-        if (!readResponse.ok) continue
+        if (!readResponse.ok) {
+          console.error(`[TaskExecutor] Failed to read ${filename}: ${readResponse.status}`)
+          continue
+        }
 
         try {
           const content = await readResponse.text()
@@ -249,8 +268,6 @@ export class TaskExecutor {
     const { metadata, prefix, agentPath } = task
     const cronDir = `${agentPath}/cron`
 
-    console.log(`[TaskExecutor] Starting task: ${prefix}`)
-
     // Rename to .running.json
     const runningPath = `${cronDir}/${prefix}.running.json`
     await this.renameFile(stub, task.path, runningPath, {
@@ -278,7 +295,10 @@ export class TaskExecutor {
       const commandPath = `${agentPath}/${metadata.task_file}`
       const readResponse = await stub.fetch('http://fake-host/read-file', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Session-Id': '__shared__'
+        },
         body: JSON.stringify({ path: commandPath })
       })
 
@@ -316,7 +336,7 @@ export class TaskExecutor {
       errorMessage = error instanceof Error ? error.message : String(error)
       finalStatus = errorMessage.includes('timeout') ? 'timeout' : 'error'
 
-      console.error(`[TaskExecutor] Task ${prefix} failed:`, error)
+      console.error(`[TaskExecutor] Task failed: ${prefix}`, error)
 
       // Send error notification to Slack
       try {
@@ -349,7 +369,7 @@ export class TaskExecutor {
       error: finalStatus !== 'success' ? errorMessage : undefined
     })
 
-    console.log(`[TaskExecutor] Task ${prefix} completed with status: ${finalStatus}`)
+    console.log(`[TaskExecutor] Completed: ${prefix} (${finalStatus}, ${finishTime - startTime}ms)`)
   }
 
   /**
@@ -364,7 +384,10 @@ export class TaskExecutor {
     // Write new file with updated content
     const writeResponse = await stub.fetch('http://fake-host/write-file', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Session-Id': '__shared__'
+      },
       body: JSON.stringify({ path: toPath, content: JSON.stringify(newContent, null, 2) })
     })
 
@@ -375,7 +398,10 @@ export class TaskExecutor {
     // Delete old file
     await stub.fetch('http://fake-host/delete-file', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Session-Id': '__shared__'
+      },
       body: JSON.stringify({ path: fromPath })
     })
   }
@@ -621,7 +647,5 @@ export class TaskExecutor {
 
     await this.state.storage.setAlarm(nextPollTime)
     this.alarmScheduled = true
-
-    console.log(`[TaskExecutor] Next poll scheduled at ${new Date(nextPollTime).toISOString()}`)
   }
 }
