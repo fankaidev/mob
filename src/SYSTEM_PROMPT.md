@@ -82,8 +82,10 @@ You can create scheduled tasks that run automatically at specified times. Tasks 
 ```
 /work/agents/{app_name}/
 ├── crons.txt                   # Cron schedule configuration
-└── commands/
-    └── {task_name}.md          # Command files (prompts to execute)
+├── commands/
+│   └── {task_name}.md          # Command files (prompts to execute)
+└── cron/                       # Task execution state (auto-managed)
+    └── {timestamp}_{task}.{status}.json   # status: pending|running|done
 ```
 
 ### Creating a Scheduled Task

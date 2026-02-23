@@ -1,16 +1,20 @@
 /**
  * TaskExecutor Durable Object (Step 2)
  *
- * This DO continuously polls the database for pending tasks and executes them:
- * 1. Query pending tasks where scheduled_at <= now
- * 2. Mark task as 'running'
+ * This DO continuously polls for pending task files and executes them:
+ * 1. Scan all agents' cron/ directories for .pending.json files
+ * 2. Rename to .running.json
  * 3. Execute the task via ChatSession DO
- * 4. Update task status to 'success' or 'error'
+ * 4. Rename to .done.json (with result in file content)
+ *
+ * File structure:
+ *   /work/agents/{agent_name}/cron/
+ *   └── {timestamp}_{task}.{status}.json   # status: pending|running|done
  *
  * Benefits:
  * - Single instance guarantees no concurrent execution of the same task
- * - Persistent polling ensures no tasks are missed
- * - Decoupled from cron trigger timing
+ * - File-based state is durable and inspectable
+ * - Status visible from filename without reading content
  */
 
 import type { DurableObjectState } from '@cloudflare/workers-types'
@@ -20,12 +24,27 @@ interface Env {
   CHAT_SESSION: DurableObjectNamespace
 }
 
-interface PendingTask {
-  id: number
+interface TaskMetadata {
   app_id: string
   task_file: string
   cron_expression: string
   scheduled_at: number
+  created_at: number
+  // Added when task completes
+  started_at?: number
+  finished_at?: number
+  duration_ms?: number
+  status?: 'success' | 'error' | 'timeout'
+  output?: string
+  error?: string
+}
+
+interface PendingTaskFile {
+  path: string
+  filename: string
+  prefix: string  // {timestamp}_{taskname}
+  metadata: TaskMetadata
+  agentPath: string
 }
 
 interface SlackApp {
@@ -101,11 +120,13 @@ export class TaskExecutor {
     if (this.processing) return
     this.processing = true
 
+    let foundTasks = false
+
     try {
       let hasMoreTasks = true
 
       while (hasMoreTasks) {
-        // Get next pending task
+        // Get next pending task file
         const task = await this.getNextPendingTask()
 
         if (!task) {
@@ -113,12 +134,14 @@ export class TaskExecutor {
           break
         }
 
+        foundTasks = true
+
         // Execute the task
         await this.executeTask(task)
       }
 
       // Schedule next poll
-      await this.scheduleNextPoll(false)
+      await this.scheduleNextPoll(foundTasks)
 
     } catch (error) {
       console.error('[TaskExecutor] Error in process loop:', error)
@@ -130,56 +153,123 @@ export class TaskExecutor {
   }
 
   /**
+   * Get ChatSession stub for file operations
+   */
+  private getChatSessionStub() {
+    const sessionId = '__shared__'
+    const doId = this.env.CHAT_SESSION.idFromName(sessionId)
+    return this.env.CHAT_SESSION.get(doId)
+  }
+
+  /**
    * Get next pending task that is ready to execute
    */
-  private async getNextPendingTask(): Promise<PendingTask | null> {
+  private async getNextPendingTask(): Promise<PendingTaskFile | null> {
     const now = Date.now()
+    const stub = this.getChatSessionStub()
 
-    const result = await this.env.DB.prepare(`
-      SELECT id, app_id, task_file, cron_expression, scheduled_at
-      FROM task_executions
-      WHERE status = 'pending' AND scheduled_at <= ?
-      ORDER BY scheduled_at ASC
-      LIMIT 1
-    `).bind(now).first<PendingTask>()
+    // Get all Slack apps to know which agents to scan
+    const result = await this.env.DB.prepare('SELECT app_id, app_name FROM slack_apps').all<{ app_id: string; app_name: string }>()
+    const apps = result.results
 
-    return result || null
+    for (const app of apps) {
+      const agentPath = `/work/agents/${app.app_name}`
+      const cronDir = `${agentPath}/cron`
+
+      // List cron directory
+      const listResponse = await stub.fetch('http://fake-host/list', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: cronDir })
+      })
+
+      if (!listResponse.ok) {
+        continue // No cron directory
+      }
+
+      const files = await listResponse.json() as string[]
+
+      for (const filename of files) {
+        // Only look for .pending.json files
+        if (!filename.endsWith('.pending.json')) continue
+
+        // Parse filename: {timestamp}_{taskname}.pending.json
+        const match = filename.match(/^(\d+)_(.+)\.pending\.json$/)
+        if (!match) continue
+
+        const scheduledAt = parseInt(match[1], 10)
+        const prefix = `${match[1]}_${match[2]}`
+
+        // Only execute tasks that are due
+        if (scheduledAt > now) continue
+
+        // Read task metadata
+        const taskPath = `${cronDir}/${filename}`
+        const readResponse = await stub.fetch('http://fake-host/read-file', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: taskPath })
+        })
+
+        if (!readResponse.ok) continue
+
+        try {
+          const content = await readResponse.text()
+          const metadata = JSON.parse(content) as TaskMetadata
+
+          return {
+            path: taskPath,
+            filename,
+            prefix,
+            metadata,
+            agentPath
+          }
+        } catch {
+          console.error(`[TaskExecutor] Invalid task file: ${taskPath}`)
+          continue
+        }
+      }
+    }
+
+    return null
   }
 
   /**
    * Execute a single task
    */
-  private async executeTask(task: PendingTask): Promise<void> {
+  private async executeTask(task: PendingTaskFile): Promise<void> {
     const startTime = Date.now()
+    const stub = this.getChatSessionStub()
+    const { metadata, prefix, agentPath } = task
+    const cronDir = `${agentPath}/cron`
 
-    console.log(`[TaskExecutor] Starting task ${task.id}: ${task.task_file}`)
+    console.log(`[TaskExecutor] Starting task: ${prefix}`)
+
+    // Rename to .running.json
+    const runningPath = `${cronDir}/${prefix}.running.json`
+    await this.renameFile(stub, task.path, runningPath, {
+      ...metadata,
+      started_at: startTime
+    })
+
+    let finalStatus: 'success' | 'error' | 'timeout' = 'error'
+    let output = ''
+    let errorMessage = ''
 
     try {
-      // Mark as running
-      await this.env.DB.prepare(`
-        UPDATE task_executions
-        SET status = 'running', started_at = ?
-        WHERE id = ? AND status = 'pending'
-      `).bind(startTime, task.id).run()
-
       // Get app config
       const app = await this.env.DB.prepare(`
         SELECT app_id, app_name, bot_token, llm_config_name, system_prompt
         FROM slack_apps
         WHERE app_id = ?
-      `).bind(task.app_id).first<SlackApp>()
+      `).bind(metadata.app_id).first<SlackApp>()
 
       if (!app) {
-        throw new Error(`App not found: ${task.app_id}`)
+        throw new Error(`App not found: ${metadata.app_id}`)
       }
 
-      // Get ChatSession DO
-      const sessionId = '__shared__'
-      const doId = this.env.CHAT_SESSION.idFromName(sessionId)
-      const stub = this.env.CHAT_SESSION.get(doId)
-
       // Read command file
-      const commandPath = `/work/agents/${app.app_name}/${task.task_file}`
+      const commandPath = `${agentPath}/${metadata.task_file}`
       const readResponse = await stub.fetch('http://fake-host/read-file', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -193,68 +283,93 @@ export class TaskExecutor {
       const commandContent = await readResponse.text()
 
       // Parse markdown file (optional front matter)
-      const { prompt, metadata } = this.parseCommandFile(commandContent)
+      const { prompt, metadata: commandMetadata } = this.parseCommandFile(commandContent)
 
       // Send "task started" notification to Slack
-      const notifyChannel = metadata.channel || DEFAULT_NOTIFICATION_CHANNEL
-      const startMessageTs = await this.sendTaskStartNotification(app, notifyChannel, task)
+      const notifyChannel = commandMetadata.channel || DEFAULT_NOTIFICATION_CHANNEL
+      const startMessageTs = await this.sendTaskStartNotification(app, notifyChannel, metadata)
 
       // Execute Agent command with timeout
-      const output = await this.executeWithTimeout(
-        this.executeAgentCommand(stub, sessionId, app, prompt, metadata),
+      const sessionId = '__shared__'
+      output = await this.executeWithTimeout(
+        this.executeAgentCommand(stub, sessionId, app, prompt, commandMetadata),
         TASK_TIMEOUT_MS
       )
 
-      // Mark as success
-      const duration = Date.now() - startTime
-      await this.env.DB.prepare(`
-        UPDATE task_executions
-        SET status = 'success', finished_at = ?, duration_ms = ?, output = ?, session_id = ?
-        WHERE id = ?
-      `).bind(Date.now(), duration, output, sessionId, task.id).run()
-
-      console.log(`[TaskExecutor] Task ${task.id} completed successfully in ${duration}ms`)
+      finalStatus = 'success'
 
       // Send completion result as thread reply
       if (startMessageTs) {
+        const duration = Date.now() - startTime
         await this.sendTaskResultToThread(app, notifyChannel, startMessageTs, 'success', output, duration)
       }
 
     } catch (error) {
-      const duration = Date.now() - startTime
-      const errorMessage = error instanceof Error ? error.message : String(error)
-      const isTimeout = errorMessage.includes('timeout')
+      errorMessage = error instanceof Error ? error.message : String(error)
+      finalStatus = errorMessage.includes('timeout') ? 'timeout' : 'error'
 
-      console.error(`[TaskExecutor] Task ${task.id} failed:`, error)
+      console.error(`[TaskExecutor] Task ${prefix} failed:`, error)
 
-      // Send error notification to Slack (as new message since we may not have startMessageTs)
+      // Send error notification to Slack
       try {
-        const appForNotify = await this.env.DB.prepare(`
+        const app = await this.env.DB.prepare(`
           SELECT app_id, app_name, bot_token, llm_config_name, system_prompt FROM slack_apps WHERE app_id = ?
-        `).bind(task.app_id).first<SlackApp>()
+        `).bind(metadata.app_id).first<SlackApp>()
 
-        if (appForNotify) {
-          const errorStartTs = await this.sendTaskStartNotification(appForNotify, DEFAULT_NOTIFICATION_CHANNEL, task)
+        if (app) {
+          const duration = Date.now() - startTime
+          const errorStartTs = await this.sendTaskStartNotification(app, DEFAULT_NOTIFICATION_CHANNEL, metadata)
           if (errorStartTs) {
-            await this.sendTaskResultToThread(appForNotify, DEFAULT_NOTIFICATION_CHANNEL, errorStartTs, isTimeout ? 'timeout' : 'error', errorMessage, duration)
+            await this.sendTaskResultToThread(app, DEFAULT_NOTIFICATION_CHANNEL, errorStartTs, finalStatus, errorMessage, duration)
           }
         }
       } catch {
         // Ignore notification errors
       }
-
-      await this.env.DB.prepare(`
-        UPDATE task_executions
-        SET status = ?, finished_at = ?, duration_ms = ?, error_message = ?
-        WHERE id = ?
-      `).bind(
-        isTimeout ? 'timeout' : 'error',
-        Date.now(),
-        duration,
-        errorMessage,
-        task.id
-      ).run()
     }
+
+    // Rename to .done.json with final result
+    const finishTime = Date.now()
+    const donePath = `${cronDir}/${prefix}.done.json`
+    await this.renameFile(stub, runningPath, donePath, {
+      ...metadata,
+      started_at: startTime,
+      finished_at: finishTime,
+      duration_ms: finishTime - startTime,
+      status: finalStatus,
+      output: finalStatus === 'success' ? output : undefined,
+      error: finalStatus !== 'success' ? errorMessage : undefined
+    })
+
+    console.log(`[TaskExecutor] Task ${prefix} completed with status: ${finalStatus}`)
+  }
+
+  /**
+   * Rename a file by writing new content and deleting old
+   */
+  private async renameFile(
+    stub: ReturnType<typeof this.getChatSessionStub>,
+    fromPath: string,
+    toPath: string,
+    newContent: TaskMetadata
+  ): Promise<void> {
+    // Write new file with updated content
+    const writeResponse = await stub.fetch('http://fake-host/write-file', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: toPath, content: JSON.stringify(newContent, null, 2) })
+    })
+
+    if (!writeResponse.ok) {
+      throw new Error(`Failed to write file: ${toPath}`)
+    }
+
+    // Delete old file
+    await stub.fetch('http://fake-host/delete-file', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: fromPath })
+    })
   }
 
   /**
@@ -291,7 +406,7 @@ export class TaskExecutor {
    * Execute Agent command via ChatSession DO
    */
   private async executeAgentCommand(
-    stub: DurableObjectStub,
+    stub: ReturnType<typeof this.getChatSessionStub>,
     sessionId: string,
     app: SlackApp,
     prompt: string,
@@ -401,7 +516,6 @@ export class TaskExecutor {
 
   /**
    * Post message to Slack
-   * Returns the message timestamp (ts) for thread replies
    */
   private async postToSlack(
     app: SlackApp,
@@ -430,24 +544,21 @@ export class TaskExecutor {
         throw new Error(`Slack API error: ${result.error}`)
       }
 
-      console.log(`[TaskExecutor] Posted message to Slack channel ${channel}`)
       return result.ts
 
     } catch (error) {
       console.error('[TaskExecutor] Failed to post to Slack:', error)
-      // Don't throw - posting to Slack is optional
       return undefined
     }
   }
 
   /**
    * Send "task started" notification to Slack
-   * Returns the message timestamp for thread replies
    */
   private async sendTaskStartNotification(
     app: SlackApp,
     channel: string,
-    task: PendingTask
+    task: TaskMetadata
   ): Promise<string | undefined> {
     const message = `🚀 *Scheduled task started*\n` +
       `• Task: \`${task.task_file}\`\n` +
@@ -486,36 +597,18 @@ export class TaskExecutor {
   /**
    * Schedule next poll using Durable Object alarm
    */
-  private async scheduleNextPoll(hadError: boolean): Promise<void> {
+  private async scheduleNextPoll(hadTasks: boolean): Promise<void> {
     if (this.alarmScheduled) return
 
-    // Check if there are more pending tasks
     const now = Date.now()
-    const nextTask = await this.env.DB.prepare(`
-      SELECT scheduled_at FROM task_executions
-      WHERE status = 'pending'
-      ORDER BY scheduled_at ASC
-      LIMIT 1
-    `).first<{ scheduled_at: number }>()
-
     let nextPollTime: number
 
-    if (nextTask) {
-      if (nextTask.scheduled_at <= now) {
-        // Tasks ready now - poll immediately
-        nextPollTime = now + ACTIVE_POLL_INTERVAL_MS
-      } else {
-        // Tasks scheduled in future - wake up when they're ready
-        nextPollTime = nextTask.scheduled_at
-      }
+    if (hadTasks) {
+      // Had tasks - check again soon
+      nextPollTime = now + ACTIVE_POLL_INTERVAL_MS
     } else {
-      // No pending tasks - idle poll
+      // No tasks - idle poll
       nextPollTime = now + IDLE_POLL_INTERVAL_MS
-    }
-
-    // If we had an error, use shorter interval for retry
-    if (hadError) {
-      nextPollTime = Math.min(nextPollTime, now + ACTIVE_POLL_INTERVAL_MS * 5)
     }
 
     await this.state.storage.setAlarm(nextPollTime)

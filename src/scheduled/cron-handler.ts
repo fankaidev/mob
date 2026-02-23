@@ -2,13 +2,21 @@
  * Cron Handler - Task Scheduler (Step 1)
  *
  * This handler runs every minute and:
- * 1. Scans all apps' crons.txt files
+ * 1. Scans all agents' crons.txt files
  * 2. Finds tasks scheduled within the next 1 minute
- * 3. Creates pending task records in the database (with deduplication)
+ * 3. Creates task files with .pending status (deduplication by filename prefix)
  *
  * Task execution is handled separately by TaskExecutor DO (Step 2)
+ *
+ * File structure:
+ *   /work/agents/{agent_name}/
+ *   ├── crons.txt
+ *   ├── commands/{task}.md
+ *   └── cron/
+ *       └── {timestamp}_{task}.{status}.json   # status: pending|running|done
  */
 
+import type { DurableObjectStub } from '@cloudflare/workers-types'
 import type { Env } from '../types'
 import { CronExpressionParser } from 'cron-parser'
 
@@ -67,7 +75,8 @@ async function scheduleAppTasks(
   now: number
 ): Promise<void> {
   try {
-    const cronsPath = `/work/agents/${app.app_name}/crons.txt`
+    const agentPath = `/work/agents/${app.app_name}`
+    const cronsPath = `${agentPath}/crons.txt`
 
     // Get session for file access (use __shared__ session)
     const sessionId = '__shared__'
@@ -97,13 +106,20 @@ async function scheduleAppTasks(
 
     console.log(`[Cron] App ${app.app_name}: found ${tasks.length} task definition(s)`)
 
+    // Ensure cron directory exists
+    await stub.fetch('http://fake-host/mkdir', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: `${agentPath}/cron` })
+    })
+
     // Find all scheduled times within the look-ahead window
     let scheduledCount = 0
     for (const task of tasks) {
       const scheduledTimes = getScheduledTimes(task.cronExpression, now, LOOK_AHEAD_MS)
 
       for (const scheduledAt of scheduledTimes) {
-        const scheduled = await scheduleTask(env.DB, app.app_id, task, scheduledAt)
+        const scheduled = await scheduleTask(stub, agentPath, app.app_id, task, scheduledAt)
         if (scheduled) {
           scheduledCount++
         }
@@ -197,32 +213,67 @@ function getScheduledTimes(cronExpression: string, now: number, windowMs: number
 }
 
 /**
- * Schedule a task in the database (with deduplication)
+ * Extract task name from task file path
+ * e.g., "commands/daily-report.md" -> "daily-report"
+ */
+function getTaskName(taskFile: string): string {
+  const filename = taskFile.split('/').pop() || taskFile
+  return filename.replace(/\.md$/, '')
+}
+
+/**
+ * Schedule a task by creating a .pending.json file
  * Returns true if task was scheduled, false if already exists
  */
 async function scheduleTask(
-  db: D1Database,
+  stub: DurableObjectStub,
+  agentPath: string,
   appId: string,
   task: CronTask,
   scheduledAt: number
 ): Promise<boolean> {
-  try {
-    // Insert with unique constraint - will fail if already exists
-    await db.prepare(`
-      INSERT INTO task_executions (app_id, task_file, cron_expression, scheduled_at, status)
-      VALUES (?, ?, ?, ?, 'pending')
-    `).bind(appId, task.taskFile, task.cronExpression, scheduledAt).run()
+  const taskName = getTaskName(task.taskFile)
+  const filePrefix = `${scheduledAt}_${taskName}`
+  const cronDir = `${agentPath}/cron`
 
-    console.log(`[Cron] Scheduled: ${task.taskFile} at ${new Date(scheduledAt).toISOString()}`)
-    return true
+  // List cron directory to check for existing task with any status
+  const listResponse = await stub.fetch('http://fake-host/list', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: cronDir })
+  })
 
-  } catch (error: any) {
-    // Unique constraint violation means task already scheduled - this is expected
-    if (error.message?.includes('UNIQUE constraint failed')) {
+  if (listResponse.ok) {
+    const files = await listResponse.json() as string[]
+    // Check if any file starts with our prefix (deduplication)
+    const exists = files.some(f => f.startsWith(filePrefix))
+    if (exists) {
       return false
     }
-    throw error
   }
+
+  // Create pending task file
+  const pendingPath = `${cronDir}/${filePrefix}.pending.json`
+  const taskContent = JSON.stringify({
+    app_id: appId,
+    task_file: task.taskFile,
+    cron_expression: task.cronExpression,
+    scheduled_at: scheduledAt,
+    created_at: Date.now()
+  }, null, 2)
+
+  const writeResponse = await stub.fetch('http://fake-host/write-file', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: pendingPath, content: taskContent })
+  })
+
+  if (writeResponse.ok) {
+    console.log(`[Cron] Scheduled: ${taskName} at ${new Date(scheduledAt).toISOString()}`)
+    return true
+  }
+
+  return false
 }
 
 /**
