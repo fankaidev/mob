@@ -36,7 +36,7 @@
     },
     {
       "tag": "v2",
-      "new_classes": ["TaskExecutor"]
+      "new_sqlite_classes": ["TaskExecutor"]
     }
   ],
 
