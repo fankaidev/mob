@@ -153,10 +153,16 @@ export class TaskExecutor {
   }
 
   /**
-   * Get ChatSession stub for file operations
+   * Get ChatSession stub for file operations (uses __shared__ session)
    */
   private getChatSessionStub() {
-    const sessionId = '__shared__'
+    return this.getSessionStub('__shared__')
+  }
+
+  /**
+   * Get ChatSession stub for a specific session
+   */
+  private getSessionStub(sessionId: string) {
     const doId = this.env.CHAT_SESSION.idFromName(sessionId)
     return this.env.CHAT_SESSION.get(doId)
   }
@@ -290,9 +296,11 @@ export class TaskExecutor {
       const startMessageTs = await this.sendTaskStartNotification(app, notifyChannel, metadata)
 
       // Execute Agent command with timeout
-      const sessionId = '__shared__'
+      // Each task gets its own session: cron:{app_name}:{timestamp}
+      const taskSessionId = `cron:${app.app_name}:${metadata.scheduled_at}`
+      const taskStub = this.getSessionStub(taskSessionId)
       output = await this.executeWithTimeout(
-        this.executeAgentCommand(stub, sessionId, app, prompt, commandMetadata),
+        this.executeAgentCommand(taskStub, taskSessionId, app, prompt, commandMetadata),
         TASK_TIMEOUT_MS
       )
 
