@@ -37,10 +37,8 @@ const LOOK_AHEAD_MS = 60 * 1000
 /**
  * Main entry point for scheduled task scheduling
  */
-export async function handleScheduledTrigger(env: Env['Bindings']): Promise<void> {
+export async function handleScheduledTrigger(env: Env['Bindings'], ctx?: ExecutionContext): Promise<void> {
   const now = Date.now()
-
-  console.log('[Cron] Scheduled trigger at', new Date(now).toISOString())
 
   try {
     // Get all Slack apps
@@ -48,18 +46,21 @@ export async function handleScheduledTrigger(env: Env['Bindings']): Promise<void
     const apps = result.results
 
     if (apps.length === 0) {
-      console.log('[Cron] No apps configured')
       return
     }
-
-    console.log(`[Cron] Found ${apps.length} app(s)`)
 
     // Process each app's cron tasks
     const schedules = apps.map(app => scheduleAppTasks(env, app, now))
     await Promise.allSettled(schedules)
 
     // Trigger TaskExecutor DO to process pending tasks
-    await triggerTaskExecutor(env)
+    if (ctx) {
+      // Use waitUntil to ensure the promise is tracked
+      ctx.waitUntil(triggerTaskExecutor(env))
+    } else {
+      // Fallback if no context provided
+      await triggerTaskExecutor(env)
+    }
 
   } catch (error) {
     console.error('[Cron] Error in scheduled trigger:', error)
@@ -86,12 +87,15 @@ async function scheduleAppTasks(
     // Try to read crons.txt
     const readResponse = await stub.fetch('http://fake-host/read-file', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Session-Id': sessionId
+      },
       body: JSON.stringify({ path: cronsPath })
     })
 
     if (!readResponse.ok) {
-      // No crons.txt file for this app - skip silently
+      // No crons.txt file for this app
       return
     }
 
@@ -104,12 +108,13 @@ async function scheduleAppTasks(
       return
     }
 
-    console.log(`[Cron] App ${app.app_name}: found ${tasks.length} task definition(s)`)
-
     // Ensure cron directory exists
     await stub.fetch('http://fake-host/mkdir', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Session-Id': sessionId
+      },
       body: JSON.stringify({ path: `${agentPath}/cron` })
     })
 
@@ -127,7 +132,7 @@ async function scheduleAppTasks(
     }
 
     if (scheduledCount > 0) {
-      console.log(`[Cron] App ${app.app_name}: scheduled ${scheduledCount} task(s)`)
+      console.log(`[Cron] Scheduled ${scheduledCount} task(s) for ${app.app_name}`)
     }
 
   } catch (error) {
@@ -232,14 +237,31 @@ async function scheduleTask(
   task: CronTask,
   scheduledAt: number
 ): Promise<boolean> {
+  // Round up to nearest 10 minutes (precision: :00, :10, :20, :30, :40, :50)
+  const TEN_MINUTES_MS = 10 * 60 * 1000
+  const originalScheduledAt = scheduledAt
+  scheduledAt = Math.ceil(scheduledAt / TEN_MINUTES_MS) * TEN_MINUTES_MS
+
   const taskName = getTaskName(task.taskFile)
+
+  // Warn if time was rounded
+  if (scheduledAt !== originalScheduledAt) {
+    console.warn(
+      `[Cron] Task "${task.taskFile}" scheduled at ${new Date(originalScheduledAt).toISOString()} ` +
+      `rounded up to ${new Date(scheduledAt).toISOString()} (10-minute precision)`
+    )
+  }
+
   const filePrefix = `${scheduledAt}_${taskName}`
   const cronDir = `${agentPath}/cron`
 
   // List cron directory to check for existing task with any status
   const listResponse = await stub.fetch('http://fake-host/list', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Session-Id': '__shared__'
+    },
     body: JSON.stringify({ path: cronDir })
   })
 
@@ -264,7 +286,10 @@ async function scheduleTask(
 
   const writeResponse = await stub.fetch('http://fake-host/write-file', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Session-Id': '__shared__'
+    },
     body: JSON.stringify({ path: pendingPath, content: taskContent })
   })
 
@@ -284,12 +309,14 @@ async function triggerTaskExecutor(env: Env['Bindings']): Promise<void> {
     const doId = env.TASK_EXECUTOR.idFromName('singleton')
     const stub = env.TASK_EXECUTOR.get(doId)
 
-    // Fire and forget - don't wait for response
-    stub.fetch('http://fake-host/process', {
+    // Trigger the TaskExecutor
+    const response = await stub.fetch('http://fake-host/process', {
       method: 'POST'
-    }).catch(err => {
-      console.error('[Cron] Failed to trigger TaskExecutor:', err)
     })
+
+    if (!response.ok) {
+      console.error('[Cron] TaskExecutor returned error:', response.status, await response.text())
+    }
 
   } catch (error) {
     console.error('[Cron] Error triggering TaskExecutor:', error)

@@ -87,7 +87,22 @@ code-reviewer (app_id: A03GHI, 使用 Claude Opus, 自定义 prompt)
 - **避免超时**：Slack 要求 3 秒内响应，否则会重试 webhook
 - **错误处理**：后台任务失败会发送错误消息到 Slack thread
 
-**注意**：当前不支持定时任务（无 cron triggers 配置）。
+### 定时任务
+
+系统支持基于文件的定时任务配置：
+
+- **配置方式**：每个 app 在 `/work/agents/{agent_name}/crons.txt` 中定义任务
+- **任务定义**：在 `/work/agents/{agent_name}/commands/` 目录下创建 markdown 文件
+- **调度精度**：最小 10 分钟间隔
+  - 所有任务时间自动向上取整到 :00, :10, :20, :30, :40, :50
+  - 例如：原定 09:07 执行 → 实际 09:10 执行
+  - 推荐使用 10 分钟倍数的 cron 表达式（如 `*/10`, `*/20`, `*/30`）
+  - 非 10 分钟倍数的表达式会在日志中显示警告
+- **执行机制**：两步异步架构
+  - Step 1: Cron Handler (每分钟扫描 `crons.txt`，创建 `.pending.json`)
+  - Step 2: TaskExecutor DO (轮询执行 pending 任务，自适应间隔：1s/30s)
+- **状态追踪**：`.pending.json` → `.running.json` → `.done.json`
+- **错误通知**：失败时发送通知到 Slack 默认频道
 
 ## 核心功能
 

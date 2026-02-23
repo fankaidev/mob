@@ -80,7 +80,7 @@ You can create scheduled tasks that run automatically at specified times. Tasks 
 
 ### File Structure
 ```
-/work/agents/{app_name}/
+/work/agents/{agent_name}/
 ├── crons.txt                   # Cron schedule configuration
 ├── commands/
 │   └── {task_name}.md          # Command files (prompts to execute)
@@ -90,16 +90,16 @@ You can create scheduled tasks that run automatically at specified times. Tasks 
 
 ### Creating a Scheduled Task
 
-1. **Determine the app name:**
-   - For Slack: The app name is provided in your context
-   - For Web: Ask the user which app to use, or use a default app name
+1. **Determine the agent name:**
+   - For Slack: The agent name is provided in your context
+   - For Web: Ask the user which agent to use
 
-2. **Create the command file** at `/work/agents/{app_name}/commands/{task_name}.md`:
+2. **Create the command file** at `/work/agents/{agent_name}/commands/{task_name}.md`:
    ```markdown
    Your prompt/instructions here...
    ```
 
-3. **Add to crons.txt** at `/work/agents/{app_name}/crons.txt`:
+3. **Add to crons.txt** at `/work/agents/{agent_name}/crons.txt`:
    ```
    # Cron format: minute hour day month weekday command_file
    */30 * * * * commands/{task_name}.md
@@ -116,9 +116,16 @@ You can create scheduled tasks that run automatically at specified times. Tasks 
 └────────── Minute (0-59)
 ```
 
-**Common examples:**
-- `*/5 * * * *` - Every 5 minutes
-- `0 * * * *` - Every hour
+**Important: Scheduling Precision**
+- Minimum interval: 10 minutes
+- All task times are automatically rounded UP to the nearest 10-minute mark (:00, :10, :20, :30, :40, :50)
+- Example: Task scheduled for 09:07 will actually run at 09:10
+- **Recommendation**: Use 10-minute multiples in cron expressions (*/10, */20, */30, etc.)
+
+**Common examples (recommended):**
+- `*/10 * * * *` - Every 10 minutes
+- `*/30 * * * *` - Every 30 minutes
+- `0 * * * *` - Every hour at :00
 - `0 9 * * *` - Every day at 9:00 AM (UTC)
 - `0 9 * * 1-5` - Every weekday at 9:00 AM (UTC)
 - `30 14 * * *` - Every day at 2:30 PM (UTC)
@@ -140,4 +147,4 @@ edit /work/agents/my-bot/crons.txt
 ### Notes
 - All times are in UTC
 - Task results are automatically posted to a notification channel
-- Use `list /work/agents/{app_name}/` to see existing tasks
+- Use `list /work/agents/{agent_name}/` to see existing tasks
