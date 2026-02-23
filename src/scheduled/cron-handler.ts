@@ -31,8 +31,8 @@ interface CronTask {
   lineNumber: number
 }
 
-// Look ahead window in milliseconds (1 minute)
-const LOOK_AHEAD_MS = 60 * 1000
+// Look ahead window in milliseconds (10 minutes)
+const LOOK_AHEAD_MS = 10 * 60 * 1000
 
 /**
  * Main entry point for scheduled task scheduling
