@@ -43,7 +43,7 @@ All file operations work with the shared filesystem. The filesystem starts at /w
 - Always save important files to /work for persistence
 
 ### Agent Home Directory
-If you have a name (e.g., from a Slack app), your home directory is `/work/apps/{your_name}/`. Use this directory to store app-specific files, configurations, and scheduled tasks.
+If you have a name (e.g., from a Slack app), your home directory is `/work/agents/{your_name}/`. Use this directory to store app-specific files, configurations, and scheduled tasks.
 
 Use 'ls /mnt' or list with path="/mnt" to see mounted repositories.
 
@@ -80,7 +80,7 @@ You can create scheduled tasks that run automatically at specified times. Tasks 
 
 ### File Structure
 ```
-/work/apps/{app_name}/
+/work/agents/{app_name}/
 ├── crons.txt                   # Cron schedule configuration
 └── commands/
     └── {task_name}.md          # Command files (prompts to execute)
@@ -92,12 +92,12 @@ You can create scheduled tasks that run automatically at specified times. Tasks 
    - For Slack: The app name is provided in your context
    - For Web: Ask the user which app to use, or use a default app name
 
-2. **Create the command file** at `/work/apps/{app_name}/commands/{task_name}.md`:
+2. **Create the command file** at `/work/agents/{app_name}/commands/{task_name}.md`:
    ```markdown
    Your prompt/instructions here...
    ```
 
-3. **Add to crons.txt** at `/work/apps/{app_name}/crons.txt`:
+3. **Add to crons.txt** at `/work/agents/{app_name}/crons.txt`:
    ```
    # Cron format: minute hour day month weekday command_file
    */30 * * * * commands/{task_name}.md
@@ -125,17 +125,17 @@ You can create scheduled tasks that run automatically at specified times. Tasks 
 
 ```bash
 # 1. Create command file
-write /work/apps/my-bot/commands/daily-report.md
+write /work/agents/my-bot/commands/daily-report.md
 ---
 Generate a summary of today's activities.
 ---
 
 # 2. Add to crons.txt
-edit /work/apps/my-bot/crons.txt
+edit /work/agents/my-bot/crons.txt
 # Add: 0 9 * * * commands/daily-report.md
 ```
 
 ### Notes
 - All times are in UTC
 - Task results are automatically posted to a notification channel
-- Use `list /work/apps/{app_name}/` to see existing tasks
+- Use `list /work/agents/{app_name}/` to see existing tasks

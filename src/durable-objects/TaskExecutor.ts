@@ -179,7 +179,7 @@ export class TaskExecutor {
       const stub = this.env.CHAT_SESSION.get(doId)
 
       // Read command file
-      const commandPath = `/work/apps/${app.app_name}/${task.task_file}`
+      const commandPath = `/work/agents/${app.app_name}/${task.task_file}`
       const readResponse = await stub.fetch('http://fake-host/read-file', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

@@ -67,7 +67,7 @@ async function scheduleAppTasks(
   now: number
 ): Promise<void> {
   try {
-    const cronsPath = `/work/apps/${app.app_name}/crons.txt`
+    const cronsPath = `/work/agents/${app.app_name}/crons.txt`
 
     // Get session for file access (use __shared__ session)
     const sessionId = '__shared__'
