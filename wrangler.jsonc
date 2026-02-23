@@ -51,7 +51,7 @@
 
   // Cron triggers for scheduled tasks
   "triggers": {
-    "crons": ["* * * * *"]  // Run every minute
+    "crons": ["*/5 * * * *"]  // Run every 5 minutes
   }
 
   // Note: Run `npm run setup:d1` to create the database
