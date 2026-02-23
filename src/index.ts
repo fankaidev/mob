@@ -5,6 +5,7 @@ import api from './routes/api'
 import admin from './routes/admin'
 import slack from './routes/slack'
 import web from './routes/web'
+import { handleScheduledTrigger } from './scheduled/cron-handler'
 
 const app = new Hono<Env>()
 
@@ -46,7 +47,19 @@ app.onError((err, c) => {
   }, 500)
 })
 
-export default app
+export default {
+  fetch: app.fetch,
 
-// Export Durable Object
+  // Scheduled handler for cron triggers
+  scheduled: async (
+    event: ScheduledEvent,
+    env: Env['Bindings'],
+    ctx: ExecutionContext
+  ) => {
+    ctx.waitUntil(handleScheduledTrigger(env))
+  }
+}
+
+// Export Durable Objects
 export { ChatSession } from './durable-objects/ChatSession'
+export { TaskExecutor } from './durable-objects/TaskExecutor'
