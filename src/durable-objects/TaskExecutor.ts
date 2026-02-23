@@ -56,7 +56,7 @@ interface SlackApp {
 }
 
 // Default notification channel for task execution results
-const DEFAULT_NOTIFICATION_CHANNEL = 'C08J5HQU9FE'
+const DEFAULT_NOTIFICATION_CHANNEL = 'C0AG8JCMBBQ'
 
 // Polling interval when idle (no pending tasks)
 const IDLE_POLL_INTERVAL_MS = 30000 // 30 seconds
