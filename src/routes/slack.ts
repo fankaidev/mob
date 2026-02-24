@@ -15,7 +15,7 @@ import {
   extractUserMessage,
   resolveAllUserMentionsInMessages,
   SlackClient,
-  truncateForSlack,
+  splitForSlack,
   verifySlackSignature,
 } from '../lib/slack'
 import { generateSessionId } from '../lib/utils'
@@ -501,7 +501,15 @@ async function handleSlackMessage(
 
       // Update the processing message with actual response
       if (fullResponse) {
-        await client.updateMessage(channel, processingTs, truncateForSlack(fullResponse))
+        const chunks = splitForSlack(fullResponse)
+
+        // Update the processing message with the first chunk
+        await client.updateMessage(channel, processingTs, chunks[0])
+
+        // Send remaining chunks as additional messages in the thread
+        for (let i = 1; i < chunks.length; i++) {
+          await client.postMessage(channel, chunks[i], threadTs)
+        }
       } else {
         await client.updateMessage(channel, processingTs, 'No response generated.')
       }
@@ -514,11 +522,12 @@ async function handleSlackMessage(
   } catch (error) {
     console.error('Slack message handling error:', error)
     const errorMessage = error instanceof Error ? error.message : String(error)
-    await client.postMessage(
-      channel,
-      truncateForSlack(`Error: ${errorMessage}`),
-      threadTs
-    )
+    const chunks = splitForSlack(`Error: ${errorMessage}`)
+
+    // Send error message(s)
+    for (const chunk of chunks) {
+      await client.postMessage(channel, chunk, threadTs)
+    }
   }
 }
 
