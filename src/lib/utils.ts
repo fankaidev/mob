@@ -6,7 +6,7 @@
  */
 export function generateSessionId(prefix: string): string {
   const now = new Date()
-  const isoString = now.toISOString().replace(/[-:]/g, '').split('.')[0].slice(2, 15)
+  const isoString = now.toISOString().replace(/[-:]/g, '').split('.')[0].slice(4, 13)
   const random = Math.random().toString(36).slice(2, 6)
   return `${prefix}-${isoString}-${random}`
 }

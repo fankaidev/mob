@@ -465,7 +465,7 @@ async function handleSlackMessage(
 
     // Create new session if needed
     if (!sessionId) {
-      sessionId = generateSessionId('slack')
+      sessionId = generateSessionId(`${appConfig.llm_config_name}-slack`)
     }
 
     // Send "processing" message first

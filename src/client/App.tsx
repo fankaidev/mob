@@ -69,16 +69,18 @@ export function App() {
 
   // Initialize session ID and load saved config
   useEffect(() => {
+    // Load saved config name from localStorage first
+    const savedConfigName = localStorage.getItem('selected-llm-config')
+
     let sid = localStorage.getItem('mob-session-id')
     if (!sid) {
-      // Generate session ID in format: web-YYYYMMDDTHHmmssZ-{random}
-      sid = generateSessionId('web')
+      // Generate session ID with config name if available
+      const prefix = savedConfigName ? `${savedConfigName}-web` : 'empty-web'
+      sid = generateSessionId(prefix)
       localStorage.setItem('mob-session-id', sid)
     }
     setSessionId(sid)
 
-    // Load saved config name from localStorage
-    const savedConfigName = localStorage.getItem('selected-llm-config')
     if (savedConfigName) {
       setSelectedConfigName(savedConfigName)
       // Try to load the full config
@@ -198,8 +200,9 @@ export function App() {
   }
 
   const createNewSession = async () => {
-    // Generate session ID in format: YYYYMMDDTHHmmssZ-{random}
-    const newSessionId = generateSessionId('web')
+    // Generate session ID with config name if available
+    const prefix = selectedConfigName ? `${selectedConfigName}-web` : 'empty-web'
+    const newSessionId = generateSessionId(prefix)
     const timestamp = new Date().getTime()
 
     localStorage.setItem('mob-session-id', newSessionId)
