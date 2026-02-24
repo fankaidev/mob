@@ -40,7 +40,7 @@ All file operations work with the shared filesystem. The filesystem starts at /w
 
 ### File Persistence
 - Files under `/work` and `/home` are **shared and persistent** across all sessions
-- Other directories (like /tmp) are session-isolated
+- Other directories (like `/tmp`) are session-isolated
 - Always save important files to `/work` or your home directory for persistence
 
 ### When to use each tool
