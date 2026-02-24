@@ -93,7 +93,7 @@ export function FileTree() {
         >
           <div
             className="flex items-center gap-1 flex-1 min-w-0 cursor-pointer"
-            onClick={(e) => isDir && toggleDirectory(node.path) || handlePreview(node.path, e)}
+            onClick={(e) => isDir ? toggleDirectory(node.path) : handlePreview(node.path, e)}
           >
             {isDir && (
               <>
