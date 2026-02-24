@@ -6,13 +6,13 @@
  */
 
 import type {
-  IFileSystem,
-  FsStat,
+  BufferEncoding,
+  CpOptions,
   FileContent,
+  FsStat,
+  IFileSystem,
   MkdirOptions,
   RmOptions,
-  CpOptions,
-  BufferEncoding,
 } from 'just-bash'
 
 type FileType = 'file' | 'dir' | 'symlink'
@@ -452,7 +452,7 @@ export class D1FileSystem implements IFileSystem {
   // ============================================================================
 
   async initializeDefaultDirectories(): Promise<void> {
-    const dirs = ['/tmp', '/work', '/home']
+    const dirs = ['/work', '/home']
     for (const dir of dirs) {
       const exists = await this.exists(dir)
       if (!exists) {

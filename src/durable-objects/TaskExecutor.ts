@@ -23,6 +23,7 @@
  */
 
 import type { DurableObjectState } from '@cloudflare/workers-types'
+import { generateSessionId } from '../lib/utils'
 
 interface Env {
   DB: D1Database
@@ -330,8 +331,8 @@ export class TaskExecutor {
       const startMessageTs = await this.sendTaskStartNotification(app, notifyChannel, metadata)
 
       // Execute Agent command with timeout
-      // Each task gets its own session: cron:{llm_config_name}:{timestamp}
-      const taskSessionId = `cron:${app.llm_config_name}:${metadata.scheduled_at}`
+      // Each task gets its own session using same format as other sessions
+      const taskSessionId = generateSessionId(`${app.llm_config_name}-cron`)
       const taskStub = this.getSessionStub(taskSessionId)
       output = await this.executeWithTimeout(
         this.executeAgentCommand(taskStub, taskSessionId, app, prompt, commandMetadata),

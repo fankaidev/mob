@@ -125,16 +125,20 @@ api.post('/session/:id/init', async (c) => {
   }
 })
 
-// GET /files/tree - Get file tree for __shared__ session
+// GET /files/tree - Get file tree visible to a session
 api.get('/files/tree', async (c) => {
   try {
-    // Query files from __shared__ session under /work
+    const sessionId = c.req.query('sessionId') || '__shared__'
+
+    // Query files visible to this session:
+    // 1. All files from __shared__ session (contains /work and /home)
+    // 2. All files from the specific session (contains /tmp and any session-specific files)
     const result = await c.env.DB.prepare(`
       SELECT path, type
       FROM files
-      WHERE session_id = '__shared__' AND path LIKE '/work%'
+      WHERE session_id = '__shared__' OR session_id = ?
       ORDER BY path ASC
-    `).all()
+    `).bind(sessionId).all()
 
     // Build tree structure
     interface FileNode {
@@ -169,21 +173,21 @@ api.get('/files/tree', async (c) => {
       const path = row.path as string
       const node = nodeMap.get(path)!
 
-      if (path === '/work') {
+      const parts = path.split('/').filter(Boolean)
+
+      // Root directories: paths with only one level (e.g., /work, /home, /tmp, etc.)
+      if (parts.length === 1) {
         root.push(node)
         continue
       }
 
       // Find parent path
-      const parts = path.split('/').filter(Boolean)
       const parentParts = parts.slice(0, -1)
       const parentPath = '/' + parentParts.join('/')
 
       const parent = nodeMap.get(parentPath)
       if (parent && parent.children) {
         parent.children.push(node)
-      } else if (parentPath === '') {
-        root.push(node)
       }
     }
 
@@ -194,17 +198,23 @@ api.get('/files/tree', async (c) => {
   }
 })
 
-// GET /files/content - Get file content from __shared__ session
+// GET /files/content - Get file content
 api.get('/files/content', async (c) => {
   try {
     const path = c.req.query('path')
+    const sessionId = c.req.query('sessionId') || '__shared__'
+
     if (!path) {
       return c.json({ error: 'Path is required' }, 400)
     }
 
+    // Determine which session to query based on path
+    // /work and /home are always in __shared__, all other paths use the specific session
+    const effectiveSessionId = (path.startsWith('/work') || path.startsWith('/home')) ? '__shared__' : sessionId
+
     const result = await c.env.DB.prepare(
       'SELECT content, type FROM files WHERE session_id = ? AND path = ?'
-    ).bind('__shared__', path).first()
+    ).bind(effectiveSessionId, path).first()
 
     if (!result) {
       return c.json({ error: 'File not found' }, 404)
@@ -224,18 +234,24 @@ api.get('/files/content', async (c) => {
   }
 })
 
-// DELETE /files - Delete file from __shared__ session
+// DELETE /files - Delete file
 api.delete('/files', async (c) => {
   try {
     const path = c.req.query('path')
+    const sessionId = c.req.query('sessionId') || '__shared__'
+
     if (!path) {
       return c.json({ error: 'Path is required' }, 400)
     }
 
+    // Determine which session to delete from based on path
+    // /work and /home are always in __shared__, all other paths use the specific session
+    const effectiveSessionId = (path.startsWith('/work') || path.startsWith('/home')) ? '__shared__' : sessionId
+
     // Delete the file
     const result = await c.env.DB.prepare(
       'DELETE FROM files WHERE session_id = ? AND path = ?'
-    ).bind('__shared__', path).run()
+    ).bind(effectiveSessionId, path).run()
 
     if (result.meta.changes === 0) {
       return c.json({ error: 'File not found' }, 404)
