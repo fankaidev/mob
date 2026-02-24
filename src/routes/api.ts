@@ -125,4 +125,127 @@ api.post('/session/:id/init', async (c) => {
   }
 })
 
+// GET /files/tree - Get file tree for __shared__ session
+api.get('/files/tree', async (c) => {
+  try {
+    // Query files from __shared__ session under /work
+    const result = await c.env.DB.prepare(`
+      SELECT path, type
+      FROM files
+      WHERE session_id = '__shared__' AND path LIKE '/work%'
+      ORDER BY path ASC
+    `).all()
+
+    // Build tree structure
+    interface FileNode {
+      name: string
+      path: string
+      type: 'file' | 'dir'
+      children?: FileNode[]
+    }
+
+    const root: FileNode[] = []
+    const nodeMap = new Map<string, FileNode>()
+
+    // First pass: create all nodes
+    for (const row of result.results as any[]) {
+      const path = row.path as string
+      const type = row.type as 'file' | 'dir'
+      const parts = path.split('/').filter(Boolean)
+      const name = parts[parts.length - 1] || 'work'
+
+      const node: FileNode = {
+        name,
+        path,
+        type,
+        children: type === 'dir' ? [] : undefined,
+      }
+
+      nodeMap.set(path, node)
+    }
+
+    // Second pass: build tree hierarchy
+    for (const row of result.results as any[]) {
+      const path = row.path as string
+      const node = nodeMap.get(path)!
+
+      if (path === '/work') {
+        root.push(node)
+        continue
+      }
+
+      // Find parent path
+      const parts = path.split('/').filter(Boolean)
+      const parentParts = parts.slice(0, -1)
+      const parentPath = '/' + parentParts.join('/')
+
+      const parent = nodeMap.get(parentPath)
+      if (parent && parent.children) {
+        parent.children.push(node)
+      } else if (parentPath === '') {
+        root.push(node)
+      }
+    }
+
+    return c.json({ tree: root })
+  } catch (error) {
+    console.error('Failed to get file tree:', error)
+    return c.json({ error: 'Failed to get file tree' }, 500)
+  }
+})
+
+// GET /files/content - Get file content from __shared__ session
+api.get('/files/content', async (c) => {
+  try {
+    const path = c.req.query('path')
+    if (!path) {
+      return c.json({ error: 'Path is required' }, 400)
+    }
+
+    const result = await c.env.DB.prepare(
+      'SELECT content, type FROM files WHERE session_id = ? AND path = ?'
+    ).bind('__shared__', path).first()
+
+    if (!result) {
+      return c.json({ error: 'File not found' }, 404)
+    }
+
+    if (result.type !== 'file') {
+      return c.json({ error: 'Path is not a file' }, 400)
+    }
+
+    return c.json({
+      path,
+      content: result.content || '',
+    })
+  } catch (error) {
+    console.error('Failed to get file content:', error)
+    return c.json({ error: 'Failed to get file content' }, 500)
+  }
+})
+
+// DELETE /files - Delete file from __shared__ session
+api.delete('/files', async (c) => {
+  try {
+    const path = c.req.query('path')
+    if (!path) {
+      return c.json({ error: 'Path is required' }, 400)
+    }
+
+    // Delete the file
+    const result = await c.env.DB.prepare(
+      'DELETE FROM files WHERE session_id = ? AND path = ?'
+    ).bind('__shared__', path).run()
+
+    if (result.meta.changes === 0) {
+      return c.json({ error: 'File not found' }, 404)
+    }
+
+    return c.json({ success: true })
+  } catch (error) {
+    console.error('Failed to delete file:', error)
+    return c.json({ error: 'Failed to delete file' }, 500)
+  }
+})
+
 export default api
