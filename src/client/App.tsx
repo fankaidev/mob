@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { generateSessionId } from '../lib/utils'
 import { ChatMessage } from './components/ChatMessage'
 import { SettingsModal } from './components/SettingsModal'
+import { FileTree } from './components/FileTree'
 
 interface ToolCall {
   name: string
@@ -415,58 +416,74 @@ export function App() {
       {/* Sidebar */}
       <div className={`${isSidebarOpen ? 'w-64' : 'w-0'} transition-all duration-200 bg-white overflow-hidden flex-shrink-0 border-r border-[#d9d9e3]`}>
         <div className="flex flex-col h-full w-64">
-          <div className="flex-1 overflow-y-auto pt-2">
-            <div className="px-2 pb-2">
-              {sessions.length === 0 ? (
-                <div className="py-8 text-center text-[#6b7280] text-xs">
-                  No chats yet
-                </div>
-              ) : (
-                sessions.map((session) => (
-                  <div
-                    key={session.id}
-                    className={`group relative mb-1 px-3 py-2.5 rounded-md cursor-pointer hover:bg-[#ececf1] transition-colors ${
-                      session.id === sessionId ? 'bg-[#ececf1]' : ''
-                    }`}
-                    onClick={() => switchSession(session.id)}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium truncate text-[#353740]">
-                          {(() => {
-                            if (!session.first_user_message) {
-                              return 'New chat'
-                            }
-                            try {
-                              const msg = JSON.parse(session.first_user_message)
-                              const textContent = msg.content?.find((c: any) => c.type === 'text')?.text || ''
-                              return textContent.slice(0, 30) || 'New chat'
-                            } catch {
-                              return session.first_user_message
-                            }
-                          })()}
-                        </div>
-                        <div className="text-xs text-[#6b7280] mt-1">
-                          {formatDateTime(session.updated_at)}
-                        </div>
-                        <div className="text-xs text-[#6b7280] truncate mt-0.5">
-                          {session.id}
-                        </div>
-                      </div>
-                      <button
-                        className="h-6 w-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white rounded flex-shrink-0"
-                        onClick={(e) => deleteSession(session.id, e)}
-                        title="Delete"
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <polyline points="3 6 5 6 21 6"></polyline>
-                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                        </svg>
-                      </button>
-                    </div>
+          {/* File Tree Section */}
+          <div className="border-b border-[#d9d9e3] overflow-hidden" style={{ height: '40%' }}>
+            <div className="px-2 py-2 text-xs font-semibold text-[#6b7280] border-b border-[#d9d9e3]">
+              Shared Files
+            </div>
+            <div className="overflow-y-auto" style={{ height: 'calc(100% - 32px)' }}>
+              <FileTree />
+            </div>
+          </div>
+
+          {/* Session List Section */}
+          <div className="flex-1 overflow-hidden flex flex-col">
+            <div className="px-2 py-2 text-xs font-semibold text-[#6b7280] border-b border-[#d9d9e3]">
+              Chats
+            </div>
+            <div className="flex-1 overflow-y-auto pt-2">
+              <div className="px-2 pb-2">
+                {sessions.length === 0 ? (
+                  <div className="py-8 text-center text-[#6b7280] text-xs">
+                    No chats yet
                   </div>
-                ))
-              )}
+                ) : (
+                  sessions.map((session) => (
+                    <div
+                      key={session.id}
+                      className={`group relative mb-1 px-3 py-2.5 rounded-md cursor-pointer hover:bg-[#ececf1] transition-colors ${
+                        session.id === sessionId ? 'bg-[#ececf1]' : ''
+                      }`}
+                      onClick={() => switchSession(session.id)}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium truncate text-[#353740]">
+                            {(() => {
+                              if (!session.first_user_message) {
+                                return 'New chat'
+                              }
+                              try {
+                                const msg = JSON.parse(session.first_user_message)
+                                const textContent = msg.content?.find((c: any) => c.type === 'text')?.text || ''
+                                return textContent.slice(0, 30) || 'New chat'
+                              } catch {
+                                return session.first_user_message
+                              }
+                            })()}
+                          </div>
+                          <div className="text-xs text-[#6b7280] mt-1">
+                            {formatDateTime(session.updated_at)}
+                          </div>
+                          <div className="text-xs text-[#6b7280] truncate mt-0.5">
+                            {session.id}
+                          </div>
+                        </div>
+                        <button
+                          className="h-6 w-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white rounded flex-shrink-0"
+                          onClick={(e) => deleteSession(session.id, e)}
+                          title="Delete"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           </div>
         </div>
