@@ -39,9 +39,9 @@ You have access to the following tools:
 All file operations work with the shared filesystem. The filesystem starts at /work as the working directory.
 
 ### File Persistence
-- Files under /work are **shared and persistent** across all sessions
+- Files under `/work` and `/home` are **shared and persistent** across all sessions
 - Other directories (like /tmp) are session-isolated
-- Always save important files to /work for persistence
+- Always save important files to `/work` or your home directory for persistence
 
 ### When to use each tool
 - Use `read` to view file contents

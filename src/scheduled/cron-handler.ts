@@ -9,7 +9,7 @@
  * Task execution is handled separately by TaskExecutor DO (Step 2)
  *
  * File structure:
- *   /work/agents/{agent_name}/
+ *   /home/{agent_name}/
  *   ├── crons.txt
  *   ├── commands/{task}.md
  *   └── cron/
@@ -76,7 +76,7 @@ async function scheduleAppTasks(
   now: number
 ): Promise<void> {
   try {
-    const agentPath = `/work/agents/${app.llm_config_name}`
+    const agentPath = `/home/${app.llm_config_name}`
     const cronsPath = `${agentPath}/crons.txt`
 
     // Get session for file access (use __shared__ session)
