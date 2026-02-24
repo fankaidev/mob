@@ -9,7 +9,11 @@ interface FileNode {
   isExpanded?: boolean
 }
 
-export function FileTree() {
+interface FileTreeProps {
+  sessionId: string
+}
+
+export function FileTree({ sessionId }: FileTreeProps) {
   const [fileTree, setFileTree] = useState<FileNode[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -17,13 +21,13 @@ export function FileTree() {
 
   useEffect(() => {
     loadFileTree()
-  }, [])
+  }, [sessionId]) // Reload when sessionId changes
 
   const loadFileTree = async () => {
     try {
       setLoading(true)
       setError(null)
-      const response = await fetch('/api/files/tree')
+      const response = await fetch(`/api/files/tree?sessionId=${encodeURIComponent(sessionId)}`)
       if (!response.ok) {
         throw new Error('Failed to load file tree')
       }
@@ -66,7 +70,7 @@ export function FileTree() {
     }
 
     try {
-      const response = await fetch(`/api/files?path=${encodeURIComponent(path)}`, {
+      const response = await fetch(`/api/files?path=${encodeURIComponent(path)}&sessionId=${encodeURIComponent(sessionId)}`, {
         method: 'DELETE',
       })
 
@@ -168,6 +172,7 @@ export function FileTree() {
       {previewPath && (
         <FilePreviewModal
           path={previewPath}
+          sessionId={sessionId}
           onClose={() => setPreviewPath(null)}
         />
       )}

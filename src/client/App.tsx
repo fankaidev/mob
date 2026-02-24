@@ -419,10 +419,10 @@ export function App() {
           {/* File Tree Section */}
           <div className="border-b border-[#d9d9e3] overflow-hidden" style={{ height: '40%' }}>
             <div className="px-2 py-2 text-xs font-semibold text-[#6b7280] border-b border-[#d9d9e3]">
-              Shared Files
+              Files
             </div>
             <div className="overflow-y-auto" style={{ height: 'calc(100% - 32px)' }}>
-              <FileTree />
+              <FileTree sessionId={sessionId} />
             </div>
           </div>
 

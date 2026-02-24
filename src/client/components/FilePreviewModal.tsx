@@ -2,23 +2,36 @@ import { useEffect, useState } from 'react'
 
 interface FilePreviewModalProps {
   path: string
+  sessionId: string
   onClose: () => void
 }
 
-export function FilePreviewModal({ path, onClose }: FilePreviewModalProps) {
+export function FilePreviewModal({ path, sessionId, onClose }: FilePreviewModalProps) {
   const [content, setContent] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     loadFileContent()
-  }, [path])
+  }, [path, sessionId])
+
+  // Handle ESC key to close modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
 
   const loadFileContent = async () => {
     try {
       setLoading(true)
       setError(null)
-      const response = await fetch(`/api/files/content?path=${encodeURIComponent(path)}`)
+      const response = await fetch(`/api/files/content?path=${encodeURIComponent(path)}&sessionId=${encodeURIComponent(sessionId)}`)
       if (!response.ok) {
         throw new Error('Failed to load file content')
       }
