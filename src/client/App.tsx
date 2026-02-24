@@ -9,10 +9,15 @@ interface ToolCall {
   args: any
 }
 
+interface ContentBlock {
+  type: 'text' | 'toolCall'
+  text?: string
+  toolCall?: ToolCall
+}
+
 interface Message {
   role: 'user' | 'assistant'
-  content: string
-  toolCalls?: ToolCall[]
+  content: ContentBlock[]
   prefix?: string  // Optional speaker prefix (e.g., "user:Kai", "bot:AppName")
 }
 
@@ -150,44 +155,48 @@ export function App() {
 
         data.messages.forEach((msg: any) => {
           if (msg.role === 'user' && msg.content) {
+            const contentBlocks: ContentBlock[] = []
+
             if (Array.isArray(msg.content)) {
-              const text = msg.content
-                .filter((c: any) => c.type === 'text')
-                .map((c: any) => c.text)
-                .join('')
-              if (text) {
-                historyMessages.push({
-                  role: 'user',
-                  content: text,
-                  prefix: msg.prefix  // Include prefix if available
-                })
-              }
+              msg.content.forEach((c: any) => {
+                if (c.type === 'text' && c.text) {
+                  contentBlocks.push({ type: 'text', text: c.text })
+                }
+              })
             } else if (typeof msg.content === 'string') {
+              contentBlocks.push({ type: 'text', text: msg.content })
+            }
+
+            if (contentBlocks.length > 0) {
               historyMessages.push({
                 role: 'user',
-                content: msg.content,
+                content: contentBlocks,
                 prefix: msg.prefix
               })
             }
           } else if (msg.role === 'assistant' && Array.isArray(msg.content)) {
-            const text = msg.content
-              .filter((c: any) => c.type === 'text')
-              .map((c: any) => c.text)
-              .join('')
+            const contentBlocks: ContentBlock[] = []
 
-            const toolCalls = msg.content
-              .filter((c: any) => c.type === 'toolCall')
-              .map((c: any) => ({
-                name: c.name,
-                args: c.arguments
-              }))
+            // 按原始顺序处理内容块
+            msg.content.forEach((c: any) => {
+              if (c.type === 'text' && c.text) {
+                contentBlocks.push({ type: 'text', text: c.text })
+              } else if (c.type === 'toolCall') {
+                contentBlocks.push({
+                  type: 'toolCall',
+                  toolCall: {
+                    name: c.name,
+                    args: c.arguments
+                  }
+                })
+              }
+            })
 
-            if (text || toolCalls.length > 0) {
+            if (contentBlocks.length > 0) {
               historyMessages.push({
                 role: 'assistant',
-                content: text,
-                toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-                prefix: msg.prefix  // Include prefix if available
+                content: contentBlocks,
+                prefix: msg.prefix
               })
             }
           }
@@ -298,11 +307,11 @@ export function App() {
     const messageText = inputValue.trim()
     if (!messageText) return
 
-    setMessages([...messages, { role: 'user', content: messageText }])
+    setMessages([...messages, { role: 'user', content: [{ type: 'text', text: messageText }] }])
     setInputValue('')
     setIsLoading(true)
 
-    const loadingMessage: Message = { role: 'assistant', content: '...' }
+    const loadingMessage: Message = { role: 'assistant', content: [{ type: 'text', text: '...' }] }
     setMessages(prev => [...prev, loadingMessage])
 
     // Construct AgentMessage object
@@ -326,8 +335,8 @@ export function App() {
 
       const reader = response.body!.getReader()
       const decoder = new TextDecoder()
-      let assistantMessage = ''
-      let currentToolCalls: ToolCall[] = []
+      let contentBlocks: ContentBlock[] = []
+      let currentTextBlock: ContentBlock | null = null
 
       while (true) {
         const { done, value } = await reader.read()
@@ -351,27 +360,40 @@ export function App() {
                   throw new Error(error)
                 }
               } else if (event.type === 'text') {
-                assistantMessage += event.text
+                // 追加文本到当前文本块
+                if (!currentTextBlock) {
+                  currentTextBlock = { type: 'text', text: event.text }
+                  contentBlocks.push(currentTextBlock)
+                } else {
+                  currentTextBlock.text = (currentTextBlock.text || '') + event.text
+                }
+
                 setMessages(prev => {
                   const newMessages = [...prev]
                   newMessages[newMessages.length - 1] = {
                     role: 'assistant',
-                    content: assistantMessage,
-                    toolCalls: currentToolCalls.length > 0 ? currentToolCalls : undefined
+                    content: [...contentBlocks]
                   }
                   return newMessages
                 })
               } else if (event.type === 'tool_call_start') {
-                currentToolCalls.push({
-                  name: event.toolName,
-                  args: event.args
-                })
+                // 添加工具调用块
+                const toolCallBlock: ContentBlock = {
+                  type: 'toolCall',
+                  toolCall: {
+                    name: event.toolName,
+                    args: event.args
+                  }
+                }
+                contentBlocks.push(toolCallBlock)
+                // 重置当前文本块，这样后续文本会创建新的文本块
+                currentTextBlock = null
+
                 setMessages(prev => {
                   const newMessages = [...prev]
                   newMessages[newMessages.length - 1] = {
                     role: 'assistant',
-                    content: assistantMessage,
-                    toolCalls: [...currentToolCalls]
+                    content: [...contentBlocks]
                   }
                   return newMessages
                 })
@@ -385,12 +407,12 @@ export function App() {
         }
       }
 
-      if (!assistantMessage) {
+      if (contentBlocks.length === 0) {
         setMessages(prev => {
           const newMessages = [...prev]
           newMessages[newMessages.length - 1] = {
             role: 'assistant',
-            content: 'No response generated.'
+            content: [{ type: 'text', text: 'No response generated.' }]
           }
           return newMessages
         })
@@ -401,7 +423,10 @@ export function App() {
         const newMessages = [...prev]
         newMessages[newMessages.length - 1] = {
           role: 'assistant',
-          content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`
+          content: [{
+            type: 'text',
+            text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`
+          }]
         }
         return newMessages
       })
@@ -585,7 +610,6 @@ export function App() {
                 key={idx}
                 role={msg.role}
                 content={msg.content}
-                toolCalls={msg.toolCalls}
                 prefix={msg.prefix}
               />
             ))}
