@@ -82,7 +82,7 @@ export class ChatSession {
     // Initialize MountableFs with D1FileSystem base for persistent storage
     const baseFs = new D1FileSystem(this.env.DB, this.sessionId)
 
-    // Ensure the __shared__ session exists for shared files under /work
+    // Ensure the __shared__ session exists for shared files under /work and /home
     const SHARED_SESSION_ID = '__shared__'
     const sharedSession = await this.env.DB.prepare(
       'SELECT id FROM sessions WHERE id = ?'
@@ -571,7 +571,7 @@ export class ChatSession {
    * Build system prompt with agent name and home folder injected
    */
   private getDefaultSystemPrompt(agentName: string): string {
-    const homeFolder = `/work/agents/${agentName}`
+    const homeFolder = `/home/${agentName}`
     return SYSTEM_PROMPT
       .replace(/\{\{AGENT_NAME\}\}/g, agentName)
       .replace(/\{\{HOME_FOLDER\}\}/g, homeFolder)

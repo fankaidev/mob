@@ -8,7 +8,7 @@
  * 4. Rename to .done.json (with result in file content)
  *
  * File structure:
- *   /work/agents/{agent_name}/cron/
+ *   /home/{agent_name}/cron/
  *   └── {timestamp}_{task}.{status}.json   # status: pending|running|done
  *
  * Benefits:
@@ -196,7 +196,7 @@ export class TaskExecutor {
     const apps = result.results
 
     for (const app of apps) {
-      const agentPath = `/work/agents/${app.llm_config_name}`
+      const agentPath = `/home/${app.llm_config_name}`
       const cronDir = `${agentPath}/cron`
 
       // List cron directory

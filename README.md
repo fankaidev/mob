@@ -91,8 +91,8 @@ code-reviewer (app_id: A03GHI, 使用 Claude Opus, 自定义 prompt)
 
 系统支持基于文件的定时任务配置：
 
-- **配置方式**：每个 app 在 `/work/agents/{agent_name}/crons.txt` 中定义任务
-- **任务定义**：在 `/work/agents/{agent_name}/commands/` 目录下创建 markdown 文件
+- **配置方式**：每个 app 在 `/home/{agent_name}/crons.txt` 中定义任务
+- **任务定义**：在 `/home/{agent_name}/commands/` 目录下创建 markdown 文件
 - **调度精度**：最小 10 分钟间隔
   - 所有任务时间自动向上取整到 :00, :10, :20, :30, :40, :50
   - 例如：原定 09:07 执行 → 实际 09:10 执行

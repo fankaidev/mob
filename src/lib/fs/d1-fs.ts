@@ -28,10 +28,10 @@ interface FileRow {
   mtime: number
 }
 
-// Special session ID for shared files under /work
+// Special session ID for shared files under /work and /home
 const SHARED_SESSION_ID = '__shared__'
 // Paths that are shared across all sessions
-const SHARED_PATH_PREFIX = '/work'
+const SHARED_PATH_PREFIXES = ['/work', '/home']
 
 export class D1FileSystem implements IFileSystem {
   private db: D1Database
@@ -44,12 +44,14 @@ export class D1FileSystem implements IFileSystem {
 
   /**
    * Get the effective session ID for a path.
-   * Paths under /home use the shared session ID.
+   * Paths under /work and /home use the shared session ID.
    */
   private getEffectiveSessionId(path: string): string {
     const normalized = this.normalizePath(path)
-    if (normalized === SHARED_PATH_PREFIX || normalized.startsWith(`${SHARED_PATH_PREFIX}/`)) {
-      return SHARED_SESSION_ID
+    for (const prefix of SHARED_PATH_PREFIXES) {
+      if (normalized === prefix || normalized.startsWith(`${prefix}/`)) {
+        return SHARED_SESSION_ID
+      }
     }
     return this.sessionId
   }
@@ -450,7 +452,7 @@ export class D1FileSystem implements IFileSystem {
   // ============================================================================
 
   async initializeDefaultDirectories(): Promise<void> {
-    const dirs = ['/tmp', '/work']
+    const dirs = ['/tmp', '/work', '/home']
     for (const dir of dirs) {
       const exists = await this.exists(dir)
       if (!exists) {
