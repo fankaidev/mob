@@ -473,7 +473,7 @@ export class ChatSession {
         })
       }
 
-      const { base_url: baseUrl, api_key: apiKey, model, provider, system_prompt: systemPrompt } = llmConfig
+      const { base_url: baseUrl, api_key: apiKey, model, provider } = llmConfig
 
       // Extract text from message for validation and bash command check
       const messageText = typeof message.content === 'string'
@@ -549,7 +549,7 @@ export class ChatSession {
       const encoder = new TextEncoder()
 
       // Handle chat in background
-      this.handleChat(message, baseUrl, apiKey, model, provider, writer, encoder, contextMessages, systemPrompt, assistantPrefix, llmConfigName).catch((error) => {
+      this.handleChat(message, baseUrl, apiKey, model, provider, writer, encoder, llmConfigName, contextMessages, assistantPrefix).catch((error) => {
         console.error('Chat error:', error)
         writer.write(encoder.encode(`data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`))
         writer.close()
@@ -568,10 +568,13 @@ export class ChatSession {
   }
 
   /**
-   * Default system prompt
+   * Build system prompt with agent name and home folder injected
    */
-  private getDefaultSystemPrompt(): string {
+  private getDefaultSystemPrompt(agentName: string): string {
+    const homeFolder = `/work/agents/${agentName}`
     return SYSTEM_PROMPT
+      .replace(/\{\{AGENT_NAME\}\}/g, agentName)
+      .replace(/\{\{HOME_FOLDER\}\}/g, homeFolder)
   }
 
   /**
@@ -671,10 +674,9 @@ export class ChatSession {
 
   /**
    * Handle chat message with streaming
+   * @param llmConfigName - LLM config name (agent name), used for system prompt and session recording
    * @param contextMessages - Optional messages from external context (e.g., Slack thread history)
-   * @param systemPrompt - Optional custom system prompt
    * @param assistantPrefix - Optional prefix for new assistant messages (e.g., "bot:AppName")
-   * @param llmConfigName - LLM config name to record in session
    */
   private async handleChat(
     message: AgentMessage,
@@ -684,10 +686,9 @@ export class ChatSession {
     provider: string,
     writer: WritableStreamDefaultWriter,
     encoder: TextEncoder,
+    llmConfigName: string,
     contextMessages?: AgentMessage[],
-    systemPrompt?: string,
-    assistantPrefix?: string,
-    llmConfigName?: string
+    assistantPrefix?: string
   ) {
     try {
       // Initialize filesystem for chat (with tools)
@@ -711,17 +712,14 @@ export class ChatSession {
       // Track the number of messages before agent.prompt() to identify new messages
       const oldMessageCount = this.messages.length
 
-      // Build final system prompt
-      const defaultPrompt = this.getDefaultSystemPrompt()
-      const finalSystemPrompt = systemPrompt
-        ? `${defaultPrompt}\n\n---\n\n${systemPrompt}`
-        : defaultPrompt
+      // Build system prompt with agent name injected
+      const systemPrompt = this.getDefaultSystemPrompt(llmConfigName)
 
       // Create and configure agent
       const agent = new Agent({
         initialState: {
           model: modelConfig,
-          systemPrompt: finalSystemPrompt,
+          systemPrompt,
           tools,
           messages: this.messages,
         },
