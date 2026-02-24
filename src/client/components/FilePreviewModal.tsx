@@ -32,10 +32,7 @@ export function FilePreviewModal({ path, onClose }: FilePreviewModalProps) {
   }
 
   return (
-    <div
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
-      onClick={onClose}
-    >
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div
         className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[80vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
@@ -71,16 +68,6 @@ export function FilePreviewModal({ path, onClose }: FilePreviewModalProps) {
               {content}
             </pre>
           )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-[#d9d9e3]">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-[#353740] hover:bg-[#ececf1] rounded-md transition-colors"
-          >
-            Close
-          </button>
         </div>
       </div>
     </div>

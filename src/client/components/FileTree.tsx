@@ -96,28 +96,21 @@ export function FileTree() {
             onClick={() => isDir && toggleDirectory(node.path)}
           >
             {isDir && (
+              <>
               <span className="text-[#6b7280] w-3">
                 {isExpanded ? '▼' : '▶'}
               </span>
+              <span className="text-[#353740] truncate">📁 {node.name}</span>
+              </>
             )}
-            {!isDir && <span className="w-3" />}
-            <span className="text-[#353740] truncate">
-              {isDir ? '📁' : '📄'} {node.name}
-            </span>
+            {!isDir && <div onClick={(e) => handlePreview(node.path, e)} >
+              <span className="w-3" />
+              <span className="text-[#353740] truncate">📄 {node.name}</span>
+            </div>}
           </div>
 
           {!isDir && (
             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-              <button
-                onClick={(e) => handlePreview(node.path, e)}
-                className="h-5 w-5 flex items-center justify-center hover:bg-white rounded"
-                title="Preview"
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                  <circle cx="12" cy="12" r="3"></circle>
-                </svg>
-              </button>
               <button
                 onClick={(e) => handleDelete(node.path, e)}
                 className="h-5 w-5 flex items-center justify-center hover:bg-white rounded"
