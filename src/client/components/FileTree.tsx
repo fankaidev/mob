@@ -93,7 +93,7 @@ export function FileTree() {
         >
           <div
             className="flex items-center gap-1 flex-1 min-w-0 cursor-pointer"
-            onClick={() => isDir && toggleDirectory(node.path)}
+            onClick={(e) => isDir && toggleDirectory(node.path) || handlePreview(node.path, e)}
           >
             {isDir && (
               <>
@@ -103,10 +103,10 @@ export function FileTree() {
               <span className="text-[#353740] truncate">📁 {node.name}</span>
               </>
             )}
-            {!isDir && <div onClick={(e) => handlePreview(node.path, e)} >
+            {!isDir && <>
               <span className="w-3" />
               <span className="text-[#353740] truncate">📄 {node.name}</span>
-            </div>}
+            </>}
           </div>
 
           {!isDir && (
