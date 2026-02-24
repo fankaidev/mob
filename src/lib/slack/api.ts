@@ -120,6 +120,64 @@ export class SlackClient {
 }
 
 /**
+ * Split long text into multiple messages for Slack
+ * Slack allows up to 4000 characters per message
+ * @param text The text to split
+ * @param maxLength Maximum length per message chunk (default: 3900 to leave room for metadata)
+ * @returns Array of text chunks that fit within Slack's limits
+ */
+export function splitForSlack(text: string, maxLength: number = 3900): string[] {
+  if (text.length <= maxLength) {
+    return [text]
+  }
+
+  const chunks: string[] = []
+  let remaining = text
+
+  while (remaining.length > 0) {
+    if (remaining.length <= maxLength) {
+      chunks.push(remaining)
+      break
+    }
+
+    // Try to find a good break point (newline, space, or punctuation)
+    let splitIndex = maxLength
+    const searchStart = Math.max(0, maxLength - 200) // Look back up to 200 chars
+
+    // Prioritize splitting at paragraph breaks
+    const lastNewline = remaining.lastIndexOf('\n\n', maxLength)
+    if (lastNewline > searchStart) {
+      splitIndex = lastNewline + 2 // Include the newlines
+    } else {
+      // Try single newline
+      const lastSingleNewline = remaining.lastIndexOf('\n', maxLength)
+      if (lastSingleNewline > searchStart) {
+        splitIndex = lastSingleNewline + 1
+      } else {
+        // Try period followed by space
+        const lastPeriod = remaining.lastIndexOf('. ', maxLength)
+        if (lastPeriod > searchStart) {
+          splitIndex = lastPeriod + 2
+        } else {
+          // Try any space
+          const lastSpace = remaining.lastIndexOf(' ', maxLength)
+          if (lastSpace > searchStart) {
+            splitIndex = lastSpace + 1
+          }
+          // Otherwise just hard cut at maxLength
+        }
+      }
+    }
+
+    chunks.push(remaining.slice(0, splitIndex))
+    remaining = remaining.slice(splitIndex)
+  }
+
+  return chunks
+}
+
+/**
+ * @deprecated Use splitForSlack instead to send multiple messages
  * Truncate text to fit Slack's message limit
  * Slack allows up to 4000 characters per message
  */
