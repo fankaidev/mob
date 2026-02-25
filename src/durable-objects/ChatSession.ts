@@ -104,19 +104,51 @@ export class ChatSession {
 
   /**
    * Build model config
+   *
+   * Selects the appropriate API format based on the provider:
+   * - openai, groq, together, xai, deepseek: use OpenAI Chat Completions API
+   * - anthropic: use Anthropic Messages API
    */
-  private buildModel(baseUrl: string, modelId: string, provider: string): Model<'anthropic-messages'> {
-    return {
-      id: modelId,
-      name: modelId,
-      api: 'anthropic-messages',
-      provider: provider as any,
-      baseUrl,
-      reasoning: false,
-      input: ['text', 'image'],
-      cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
-      contextWindow: 200000,
-      maxTokens: 8192,
+  private buildModel(baseUrl: string, modelId: string, provider: string): Model<any> {
+    const providerLower = provider.toLowerCase()
+
+    // Determine API type based on provider
+    const useOpenAIAPI = [
+      'openai',
+      'groq',
+      'together',
+      'xai',
+      'deepseek',
+      'perplexity'
+    ].includes(providerLower)
+
+    if (useOpenAIAPI) {
+      return {
+        id: modelId,
+        name: modelId,
+        api: 'openai-completions',
+        provider: provider as any,
+        baseUrl,
+        reasoning: false,
+        input: ['text', 'image'],
+        cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+        contextWindow: 200000,
+        maxTokens: 8192,
+      }
+    } else {
+      // Use Anthropic Messages API
+      return {
+        id: modelId,
+        name: modelId,
+        api: 'anthropic-messages',
+        provider: provider as any,
+        baseUrl,
+        reasoning: false,
+        input: ['text', 'image'],
+        cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+        contextWindow: 200000,
+        maxTokens: 8192,
+      }
     }
   }
 

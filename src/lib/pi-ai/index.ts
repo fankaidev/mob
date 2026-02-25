@@ -1,13 +1,13 @@
 /**
  * Backend pi-ai module.
- * Simplified version of frontend/src/lib/pi-ai/src/index.ts
- * Only includes Anthropic provider for server-side agent execution.
+ * Includes Anthropic and OpenAI providers for server-side agent execution.
  */
 
 export type { Static, TSchema } from "@sinclair/typebox";
 export { Type } from "@sinclair/typebox";
 
 export * from "./providers/anthropic";
+export * from "./providers/openai-completions";
 export * from "./types";
 export * from "./utils/event-stream";
 export * from "./utils/json-parse";

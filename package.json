@@ -24,6 +24,7 @@
     "hono": "^4.11.1",
     "just-bash": "^2.10.2",
     "lucide-react": "^0.575.0",
+    "openai": "^6.25.0",
     "partial-json": "^0.1.7",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
