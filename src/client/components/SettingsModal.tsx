@@ -7,7 +7,6 @@ interface LLMConfig {
   base_url: string
   api_key?: string
   model: string
-  system_prompt?: string
   created_at?: number
   updated_at?: number
 }

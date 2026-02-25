@@ -35,7 +35,6 @@ interface LLMConfig {
   base_url: string
   api_key?: string
   model: string
-  system_prompt?: string
 }
 
 export function App() {

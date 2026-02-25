@@ -69,7 +69,6 @@ CREATE TABLE IF NOT EXISTS llm_configs (
   base_url TEXT NOT NULL,              -- API endpoint URL
   api_key TEXT NOT NULL,               -- API key (encrypted in production)
   model TEXT NOT NULL,                 -- Model ID
-  system_prompt TEXT,                  -- Optional: custom system prompt for this LLM config
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );

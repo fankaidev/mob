@@ -260,7 +260,8 @@ async function scheduleTask(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-Session-Id': '__shared__'
+      'X-Session-Id': '__shared__',
+      'X-Caller': 'cron-handler'
     },
     body: JSON.stringify({ path: cronDir })
   })
