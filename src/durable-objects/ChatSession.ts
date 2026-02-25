@@ -104,14 +104,29 @@ export class ChatSession {
 
   /**
    * Build model config
+   *
+   * Currently uses Anthropic Messages API format for all providers.
+   * For OpenAI-compatible providers (OpenRouter, Groq, etc.), the base URL
+   * is automatically adjusted to use their Anthropic-compatible endpoint.
    */
   private buildModel(baseUrl: string, modelId: string, provider: string): Model<'anthropic-messages'> {
+    let adjustedBaseUrl = baseUrl
+
+    // For OpenAI-compatible providers using /chat/completions endpoint,
+    // convert to use Anthropic Messages API format instead
+    if (baseUrl.includes('/chat/completions')) {
+      // OpenRouter: https://openrouter.ai/api/v1/chat/completions -> https://openrouter.ai/api/v1
+      // Remove /chat/completions suffix and let Anthropic SDK add /messages
+      adjustedBaseUrl = baseUrl.replace(/\/chat\/completions$/, '')
+      console.log(`[ChatSession] Converted ${provider} endpoint to Anthropic format: ${baseUrl} -> ${adjustedBaseUrl}`)
+    }
+
     return {
       id: modelId,
       name: modelId,
       api: 'anthropic-messages',
       provider: provider as any,
-      baseUrl,
+      baseUrl: adjustedBaseUrl,
       reasoning: false,
       input: ['text', 'image'],
       cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
