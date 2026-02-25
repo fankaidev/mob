@@ -2,88 +2,116 @@
 
 ## Current Implementation
 
-Currently, the codebase uses **Anthropic Messages API format** for all LLM providers.
+The codebase now supports both **OpenAI Chat Completions API** and **Anthropic Messages API** formats.
 
 ### Supported Providers
 
-All providers must use Anthropic Messages API-compatible endpoints:
+#### OpenAI Chat Completions API (provider: openai, groq, together, xai, deepseek, perplexity)
+- **OpenAI**: `https://api.openai.com/v1`
+- **Groq**: `https://api.groq.com/openai/v1`
+- **Together AI**: `https://api.together.xyz/v1`
+- **xAI**: `https://api.x.ai/v1`
+- **DeepSeek**: `https://api.deepseek.com/v1`
+- **Perplexity**: `https://api.perplexity.ai`
+- **OpenRouter**: `https://openrouter.ai/api/v1` (auto-detects format)
 
-- **Anthropic**: Native support via `https://api.anthropic.com/v1`
-- **OpenRouter**: Use the base endpoint `https://openrouter.ai/api/v1` (not `/chat/completions`)
-- **Other providers**: Must support Anthropic Messages API format
+#### Anthropic Messages API (provider: anthropic, or others)
+- **Anthropic**: `https://api.anthropic.com/v1`
+- **AWS Bedrock**: Via Anthropic Messages format
+- **Other LiteLLM services**: Any service that implements Anthropic Messages API
 
-### Automatic URL Conversion
+### Automatic API Selection
 
-The system automatically converts OpenAI-style endpoints to Anthropic format:
-
-```
-https://openrouter.ai/api/v1/chat/completions → https://openrouter.ai/api/v1
-```
-
-This allows using OpenRouter and other LiteLLM-based services that support both API formats.
+The system automatically selects the correct API format based on the `provider` field in your configuration:
+- `openai`, `groq`, `together`, `xai`, `deepseek`, `perplexity` → OpenAI Chat Completions API
+- `anthropic` or any other value → Anthropic Messages API
 
 ## Configuration
 
-In your LLM config:
+### OpenAI-Compatible Provider
 
 ```json
 {
   "name": "OpenRouter Kimi",
   "provider": "openai",
-  "base_url": "https://openrouter.ai/api/v1/chat/completions",
+  "base_url": "https://openrouter.ai/api/v1",
   "model": "moonshot/kimi-k2.5",
   "api_key": "your-key"
 }
 ```
 
-The `base_url` will be automatically converted to `https://openrouter.ai/api/v1` and the Anthropic SDK will append `/messages`.
+The OpenAI SDK will automatically append `/chat/completions` to the base URL.
 
-## Future Improvements
+### Anthropic-Compatible Provider
 
-### Native OpenAI API Support
+```json
+{
+  "name": "Claude",
+  "provider": "anthropic",
+  "base_url": "https://api.anthropic.com/v1",
+  "model": "claude-opus-4-20250514",
+  "api_key": "your-key"
+}
+```
 
-To fully support OpenAI Chat Completions API:
+The Anthropic SDK will automatically append `/messages` to the base URL.
 
-1. **Create OpenAI Provider** (`src/lib/pi-ai/providers/openai.ts`):
-   - Implement `streamOpenAI()` function
-   - Handle OpenAI streaming format
-   - Convert tool calls format
+## Implementation Details
 
-2. **Update buildModel** (`src/durable-objects/ChatSession.ts`):
-   ```typescript
-   private buildModel(baseUrl: string, modelId: string, provider: string): Model<any> {
-     const api = provider === 'openai' ? 'openai-completions' : 'anthropic-messages'
-     return { ...config, api }
-   }
-   ```
+### Provider Files
 
-3. **Update agent-loop** (`src/lib/pi-agent/agent-loop.ts`):
-   ```typescript
-   const streamFunction = model.api === 'openai-completions'
-     ? streamOpenAI
-     : streamSimpleAnthropic
-   ```
+- `src/lib/pi-ai/providers/openai-completions.ts` - OpenAI Chat Completions streaming implementation
+- `src/lib/pi-ai/providers/anthropic.ts` - Anthropic Messages streaming implementation
+- `src/lib/pi-agent/agent-loop.ts` - Automatically selects appropriate stream function based on `model.api`
 
-### Benefits of Native Support
+### API Selection Logic
 
-- Direct OpenAI API usage without conversion
-- Better compatibility with OpenAI-only features
-- Reduced latency (no format conversion needed)
-- Support for providers that only offer OpenAI format
+In `src/durable-objects/ChatSession.ts`:
+
+```typescript
+private buildModel(baseUrl: string, modelId: string, provider: string): Model<any> {
+  const providerLower = provider.toLowerCase()
+
+  const useOpenAIAPI = [
+    'openai', 'groq', 'together', 'xai', 'deepseek', 'perplexity'
+  ].includes(providerLower)
+
+  return {
+    api: useOpenAIAPI ? 'openai-completions' : 'anthropic-messages',
+    // ... other config
+  }
+}
+```
+
+### Stream Function Selection
+
+In `src/lib/pi-agent/agent-loop.ts`:
+
+```typescript
+const streamFunction = streamFn || (
+  config.model.api === 'openai-completions'
+    ? streamSimpleOpenAICompletions
+    : streamSimpleAnthropic
+)
+```
 
 ## Troubleshooting
 
 ### "Unexpected non-whitespace character after JSON" Error
 
-This error occurs when:
-1. Using OpenAI Chat Completions endpoint with Anthropic API
-2. Provider returns malformed JSON in tool calls
+This error may occur when:
+1. Provider returns malformed JSON in tool calls
+2. API format mismatch between configuration and actual endpoint
 
-**Solution**: Ensure your `base_url` doesn't include `/chat/completions`, or the system will auto-convert it.
+**Solution**:
+1. Ensure your `provider` field matches the actual API format
+2. For OpenAI-compatible providers, use: `provider: "openai"`
+3. For Anthropic-compatible providers, use: `provider: "anthropic"`
 
 ### Tool Calls Not Working
 
 If tool calls fail:
-1. Check that the provider supports Anthropic Messages API format
-2. Verify the base URL is correct (should not end with `/chat/completions`)
-3. Check provider documentation for Anthropic compatibility
+1. Verify the `provider` field is set correctly
+2. Check that the base URL matches the provider's API endpoint
+3. Ensure the model supports tool calling
+4. Check API key permissions

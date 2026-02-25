@@ -105,33 +105,52 @@ export class ChatSession {
   /**
    * Build model config
    *
-   * Currently uses Anthropic Messages API format for all providers.
-   * For OpenAI-compatible providers (OpenRouter, Groq, etc.), the base URL
-   * is automatically adjusted to use their Anthropic-compatible endpoint.
+   * Selects the appropriate API format based on the provider:
+   * - openai, groq, together, xai, deepseek: use OpenAI Chat Completions API
+   * - anthropic: use Anthropic Messages API
    */
-  private buildModel(baseUrl: string, modelId: string, provider: string): Model<'anthropic-messages'> {
-    let adjustedBaseUrl = baseUrl
+  private buildModel(baseUrl: string, modelId: string, provider: string): Model<any> {
+    const providerLower = provider.toLowerCase()
 
-    // For OpenAI-compatible providers using /chat/completions endpoint,
-    // convert to use Anthropic Messages API format instead
-    if (baseUrl.includes('/chat/completions')) {
-      // OpenRouter: https://openrouter.ai/api/v1/chat/completions -> https://openrouter.ai/api/v1
-      // Remove /chat/completions suffix and let Anthropic SDK add /messages
-      adjustedBaseUrl = baseUrl.replace(/\/chat\/completions$/, '')
-      console.log(`[ChatSession] Converted ${provider} endpoint to Anthropic format: ${baseUrl} -> ${adjustedBaseUrl}`)
-    }
+    // Determine API type based on provider
+    const useOpenAIAPI = [
+      'openai',
+      'groq',
+      'together',
+      'xai',
+      'deepseek',
+      'perplexity'
+    ].includes(providerLower)
 
-    return {
-      id: modelId,
-      name: modelId,
-      api: 'anthropic-messages',
-      provider: provider as any,
-      baseUrl: adjustedBaseUrl,
-      reasoning: false,
-      input: ['text', 'image'],
-      cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
-      contextWindow: 200000,
-      maxTokens: 8192,
+    if (useOpenAIAPI) {
+      console.log(`[ChatSession] Using OpenAI API format for provider: ${provider}`)
+      return {
+        id: modelId,
+        name: modelId,
+        api: 'openai-completions',
+        provider: provider as any,
+        baseUrl,
+        reasoning: false,
+        input: ['text', 'image'],
+        cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+        contextWindow: 200000,
+        maxTokens: 8192,
+      }
+    } else {
+      // Use Anthropic Messages API
+      console.log(`[ChatSession] Using Anthropic API format for provider: ${provider}`)
+      return {
+        id: modelId,
+        name: modelId,
+        api: 'anthropic-messages',
+        provider: provider as any,
+        baseUrl,
+        reasoning: false,
+        input: ['text', 'image'],
+        cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+        contextWindow: 200000,
+        maxTokens: 8192,
+      }
     }
   }
 

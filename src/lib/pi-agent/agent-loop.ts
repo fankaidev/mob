@@ -8,6 +8,7 @@ import {
 	type Context,
 	EventStream,
 	streamSimpleAnthropic,
+	streamSimpleOpenAICompletions,
 	type ToolResultMessage,
 	validateToolArguments,
 } from "../pi-ai/index";
@@ -192,12 +193,17 @@ async function streamAssistantResponse(
 		tools: context.tools,
 	};
 
-	const streamFunction = streamFn || streamSimpleAnthropic;
+	// Select appropriate stream function based on API type
+	const streamFunction = streamFn || (
+		config.model.api === 'openai-completions'
+			? streamSimpleOpenAICompletions
+			: streamSimpleAnthropic
+	);
 
 	const resolvedApiKey =
 		(config.getApiKey ? await config.getApiKey(config.model.provider) : undefined) || config.apiKey;
 
-	const response = await streamFunction(config.model, llmContext, {
+	const response = await streamFunction(config.model as any, llmContext, {
 		...config,
 		apiKey: resolvedApiKey,
 		signal,

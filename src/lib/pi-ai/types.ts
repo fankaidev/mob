@@ -178,6 +178,47 @@ export type AssistantMessageEvent =
 	| { type: "done"; reason: Extract<StopReason, "stop" | "length" | "toolUse">; message: AssistantMessage }
 	| { type: "error"; reason: Extract<StopReason, "aborted" | "error">; error: AssistantMessage };
 
+export interface OpenRouterRouting {
+	provider?: string;
+	order?: string[];
+}
+
+export interface VercelGatewayRouting {
+	/** List of provider slugs to exclusively use for this request (e.g., ["bedrock", "anthropic"]). */
+	only?: string[];
+	/** List of provider slugs to try in order (e.g., ["anthropic", "openai"]). */
+	order?: string[];
+}
+
+export interface OpenAICompletionsCompat {
+	/** Whether the provider supports the `store` field. Default: auto-detected from URL. */
+	supportsStore?: boolean;
+	/** Whether the provider supports the `developer` role (vs `system`). Default: auto-detected from URL. */
+	supportsDeveloperRole?: boolean;
+	/** Whether the provider supports `reasoning_effort`. Default: auto-detected from URL. */
+	supportsReasoningEffort?: boolean;
+	/** Whether the provider supports `stream_options: { include_usage: true }` for token usage in streaming responses. Default: true. */
+	supportsUsageInStreaming?: boolean;
+	/** Which field to use for max tokens. Default: auto-detected from URL. */
+	maxTokensField?: "max_completion_tokens" | "max_tokens";
+	/** Whether tool results require the `name` field. Default: auto-detected from URL. */
+	requiresToolResultName?: boolean;
+	/** Whether a user message after tool results requires an assistant message in between. Default: auto-detected from URL. */
+	requiresAssistantAfterToolResult?: boolean;
+	/** Whether thinking blocks must be converted to text blocks with <thinking> delimiters. Default: auto-detected from URL. */
+	requiresThinkingAsText?: boolean;
+	/** Whether tool call IDs must be normalized to Mistral format (exactly 9 alphanumeric chars). Default: auto-detected from URL. */
+	requiresMistralToolIds?: boolean;
+	/** Format for reasoning/thinking parameter. "openai" uses reasoning_effort, "zai" uses thinking: { type: "enabled" }, "qwen" uses enable_thinking: boolean. Default: "openai". */
+	thinkingFormat?: "openai" | "zai" | "qwen";
+	/** OpenRouter-specific routing preferences. Only used when baseUrl points to OpenRouter. */
+	openRouterRouting?: OpenRouterRouting;
+	/** Vercel AI Gateway routing preferences. Only used when baseUrl points to Vercel AI Gateway. */
+	vercelGatewayRouting?: VercelGatewayRouting;
+	/** Whether the provider supports the `strict` field in tool definitions. Default: true. */
+	supportsStrictMode?: boolean;
+}
+
 export interface Model<TApi extends Api> {
 	id: string;
 	name: string;
@@ -195,6 +236,7 @@ export interface Model<TApi extends Api> {
 	contextWindow: number;
 	maxTokens: number;
 	headers?: Record<string, string>;
+	compat?: OpenAICompletionsCompat;
 }
 
 // Re-export AssistantMessageEventStream type
