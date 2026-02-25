@@ -237,7 +237,11 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 						const block = blocks[index];
 						if (block && block.type === "toolCall") {
 							block.partialJson += event.delta.partial_json;
-							block.arguments = parseStreamingJson(block.partialJson);
+							try {
+								block.arguments = parseStreamingJson(block.partialJson);
+							} catch (error) {
+								// Keep previous arguments on error during streaming
+							}
 							stream.push({
 								type: "toolcall_delta",
 								contentIndex: index,
@@ -273,8 +277,16 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 								partial: output,
 							});
 						} else if (block.type === "toolCall") {
-							block.arguments = parseStreamingJson(block.partialJson);
-							delete (block as any).partialJson;
+							try {
+								block.arguments = parseStreamingJson(block.partialJson);
+								delete (block as any).partialJson;
+							} catch (error) {
+								console.error(`[Anthropic] Error parsing tool arguments:`, error);
+								console.error(`[Anthropic] Problematic partialJson: ${block.partialJson}`);
+								// Fall back to empty object if parsing fails
+								block.arguments = {};
+								delete (block as any).partialJson;
+							}
 							stream.push({
 								type: "toolcall_end",
 								contentIndex: index,
@@ -316,6 +328,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 			stream.push({ type: "done", reason: output.stopReason, message: output });
 			stream.end();
 		} catch (error) {
+			console.error(`[Anthropic] Streaming error:`, error);
 			for (const block of output.content) delete (block as any).index;
 			output.stopReason = options?.signal?.aborted ? "aborted" : "error";
 			output.errorMessage = error instanceof Error ? error.message : JSON.stringify(error);

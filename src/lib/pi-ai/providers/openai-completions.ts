@@ -145,8 +145,16 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 							partial: output,
 						});
 					} else if (block.type === "toolCall") {
-						block.arguments = parseStreamingJson(block.partialArgs || "{}");
-						delete block.partialArgs;
+						try {
+							block.arguments = parseStreamingJson(block.partialArgs || "{}");
+							delete block.partialArgs;
+						} catch (error) {
+							console.error(`[OpenAI] Error parsing tool arguments:`, error);
+							console.error(`[OpenAI] Problematic partialArgs: ${block.partialArgs}`);
+							// Fall back to empty object if parsing fails
+							block.arguments = {};
+							delete block.partialArgs;
+						}
 						stream.push({
 							type: "toolcall_end",
 							contentIndex: blockIndex(),
@@ -158,7 +166,7 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 			};
 
 			for await (const chunk of openaiStream) {
-				if (chunk.usage) {
+					if (chunk.usage) {
 					const cachedTokens = chunk.usage.prompt_tokens_details?.cached_tokens || 0;
 					const reasoningTokens = chunk.usage.completion_tokens_details?.reasoning_tokens || 0;
 					const input = (chunk.usage.prompt_tokens || 0) - cachedTokens;
@@ -283,7 +291,11 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 								if (toolCall.function?.arguments) {
 									delta = toolCall.function.arguments;
 									currentBlock.partialArgs += toolCall.function.arguments;
-									currentBlock.arguments = parseStreamingJson(currentBlock.partialArgs);
+									try {
+										currentBlock.arguments = parseStreamingJson(currentBlock.partialArgs);
+									} catch (error) {
+										// Keep previous arguments on error during streaming
+									}
 								}
 								stream.push({
 									type: "toolcall_delta",
@@ -324,6 +336,7 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 			stream.push({ type: "done", reason: output.stopReason, message: output });
 			stream.end();
 		} catch (error) {
+			console.error(`[OpenAI] Streaming error:`, error);
 			for (const block of output.content) delete (block as any).index;
 			output.stopReason = options?.signal?.aborted ? "aborted" : "error";
 			output.errorMessage = error instanceof Error ? error.message : JSON.stringify(error);

@@ -123,7 +123,6 @@ export class ChatSession {
     ].includes(providerLower)
 
     if (useOpenAIAPI) {
-      console.log(`[ChatSession] Using OpenAI API format for provider: ${provider}`)
       return {
         id: modelId,
         name: modelId,
@@ -138,7 +137,6 @@ export class ChatSession {
       }
     } else {
       // Use Anthropic Messages API
-      console.log(`[ChatSession] Using Anthropic API format for provider: ${provider}`)
       return {
         id: modelId,
         name: modelId,

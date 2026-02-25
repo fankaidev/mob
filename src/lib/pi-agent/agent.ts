@@ -1,14 +1,13 @@
 /**
  * Backend copy of Agent class.
  * Copied from frontend/src/lib/pi-agent/src/agent.ts
- * Uses streamSimpleAnthropic directly as the default stream function.
+ * Stream function is automatically selected by agent-loop based on model.api.
  */
 
 import {
 	type ImageContent,
 	type Message,
 	type Model,
-	streamSimpleAnthropic,
 	type TextContent,
 	type ThinkingBudgets,
 } from "../pi-ai/index";
@@ -52,7 +51,7 @@ export class Agent {
 	private followUpQueue: AgentMessage[] = [];
 	private steeringMode: "all" | "one-at-a-time";
 	private followUpMode: "all" | "one-at-a-time";
-	public streamFn: StreamFn;
+	public streamFn?: StreamFn;
 	private _sessionId?: string;
 	public getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined;
 	private runningPrompt?: Promise<void>;
@@ -78,7 +77,8 @@ export class Agent {
 		this.transformContext = opts.transformContext;
 		this.steeringMode = opts.steeringMode || "one-at-a-time";
 		this.followUpMode = opts.followUpMode || "one-at-a-time";
-		this.streamFn = opts.streamFn || streamSimpleAnthropic;
+		// Don't set a default streamFn here - let agent-loop select based on model.api
+		this.streamFn = opts.streamFn;
 		this._sessionId = opts.sessionId;
 		this.getApiKey = opts.getApiKey;
 		this._thinkingBudgets = opts.thinkingBudgets;

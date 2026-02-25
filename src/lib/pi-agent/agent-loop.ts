@@ -194,6 +194,9 @@ async function streamAssistantResponse(
 	};
 
 	// Select appropriate stream function based on API type
+	const selectedApi = config.model.api === 'openai-completions' ? 'OpenAI' : 'Anthropic';
+	console.log(`[AgentLoop] Selecting stream function: ${selectedApi} (model.api: ${config.model.api}, provider: ${config.model.provider}, model: ${config.model.id})`);
+
 	const streamFunction = streamFn || (
 		config.model.api === 'openai-completions'
 			? streamSimpleOpenAICompletions
