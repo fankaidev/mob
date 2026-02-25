@@ -438,6 +438,7 @@ export class ChatSession {
 
     // POST /list - List directory contents (for cron-handler/TaskExecutor)
     if (request.method === 'POST' && url.pathname === '/list') {
+      const caller = request.headers.get('X-Caller') || 'unknown'
       const { path } = await request.json() as { path: string }
       if (!path) {
         return new Response(JSON.stringify({ error: 'path is required' }), {
@@ -449,6 +450,7 @@ export class ChatSession {
       await this.initializeFilesystem()
       try {
         const entries = await this.mountableFs!.readdir(path)
+        console.log(`[${caller}] Listed directory: ${path}, found ${entries.length} entries`)
         return new Response(JSON.stringify(entries), {
           headers: { 'Content-Type': 'application/json' }
         })
@@ -493,7 +495,7 @@ export class ChatSession {
         assistantPrefix?: string  // Optional prefix for assistant messages (e.g., "bot:AppName")
       }
 
-      // Query LLM config from database (now includes system_prompt)
+      // Query LLM config from database
       const llmConfig = await this.env.DB.prepare(
         'SELECT * FROM llm_configs WHERE name = ?'
       ).bind(llmConfigName).first() as any

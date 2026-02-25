@@ -17,7 +17,7 @@ const admin = new Hono<Env>()
 admin.get('/llm-configs', async (c) => {
   try {
     const result = await c.env.DB.prepare(
-      'SELECT name, provider, base_url, model, system_prompt, created_at, updated_at FROM llm_configs ORDER BY name'
+      'SELECT name, provider, base_url, model, created_at, updated_at FROM llm_configs ORDER BY name'
     ).all<Omit<LLMConfig, 'api_key'>>()
 
     return c.json({ configs: result.results })
@@ -32,7 +32,7 @@ admin.get('/llm-configs/:name', async (c) => {
   try {
     const name = c.req.param('name')
     const result = await c.env.DB.prepare(
-      'SELECT name, provider, base_url, model, system_prompt, created_at, updated_at FROM llm_configs WHERE name = ?'
+      'SELECT name, provider, base_url, model, created_at, updated_at FROM llm_configs WHERE name = ?'
     ).bind(name).first<Omit<LLMConfig, 'api_key'>>()
 
     if (!result) {
@@ -55,7 +55,6 @@ admin.post('/llm-configs', async (c) => {
       base_url: string
       api_key: string
       model: string
-      system_prompt?: string
     }>()
 
     if (!body.name || !body.provider || !body.base_url || !body.api_key || !body.model) {
@@ -64,9 +63,9 @@ admin.post('/llm-configs', async (c) => {
 
     const now = Date.now()
     await c.env.DB.prepare(`
-      INSERT INTO llm_configs (name, provider, base_url, api_key, model, system_prompt, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).bind(body.name, body.provider, body.base_url, body.api_key, body.model, body.system_prompt || null, now, now).run()
+      INSERT INTO llm_configs (name, provider, base_url, api_key, model, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).bind(body.name, body.provider, body.base_url, body.api_key, body.model, now, now).run()
 
     return c.json({ success: true, name: body.name })
   } catch (error: any) {
@@ -87,7 +86,6 @@ admin.put('/llm-configs/:name', async (c) => {
       base_url?: string
       api_key?: string
       model?: string
-      system_prompt?: string
     }>()
 
     // Build dynamic update query
@@ -109,10 +107,6 @@ admin.put('/llm-configs/:name', async (c) => {
     if (body.model) {
       updates.push('model = ?')
       values.push(body.model)
-    }
-    if (body.system_prompt !== undefined) {
-      updates.push('system_prompt = ?')
-      values.push(body.system_prompt || null)
     }
 
     if (updates.length === 0) {

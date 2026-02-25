@@ -63,7 +63,7 @@ interface SlackApp {
 const DEFAULT_NOTIFICATION_CHANNEL = 'C0AG8JCMBBQ'
 
 // Polling interval when idle (no pending tasks)
-const IDLE_POLL_INTERVAL_MS = 30000 // 30 seconds
+const IDLE_POLL_INTERVAL_MS = 5 * 60 * 1000 // 5 minutes
 
 // Polling interval when active (tasks were found)
 const ACTIVE_POLL_INTERVAL_MS = 1000 // 1 second
@@ -205,7 +205,8 @@ export class TaskExecutor {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Session-Id': '__shared__'
+          'X-Session-Id': '__shared__',
+          'X-Caller': 'task-executor'
         },
         body: JSON.stringify({ path: cronDir })
       })
