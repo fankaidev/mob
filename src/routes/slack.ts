@@ -12,13 +12,11 @@ import type {
 } from '../lib/slack'
 import {
   convertSlackMessagesToAgentMessages,
-  extractUserMessage,
   resolveAllUserMentionsInMessages,
   SlackClient,
   splitForSlack,
-  verifySlackSignature,
+  verifySlackSignature
 } from '../lib/slack'
-import { generateSessionId } from '../lib/utils'
 import type { Env } from '../types'
 
 const slack = new Hono<Env>()
@@ -208,40 +206,115 @@ function getThreadKey(appId: string, event: SlackEvent): string {
 // Message handling
 // ============================================================================
 
+/** Minimum interval (ms) between Slack message updates to avoid rate limits */
+const SLACK_UPDATE_INTERVAL_MS = 2000
+
 /**
- * Collect full response from SSE stream
+ * Stream SSE response to Slack, updating messages as text arrives.
+ * When content exceeds Slack's limit, posts additional messages and updates them too.
+ * Throttles updates to avoid Slack rate limits.
  */
-async function collectSSEResponse(response: globalThis.Response): Promise<string> {
+async function streamSSEResponseToSlack(
+  response: globalThis.Response,
+  client: SlackClient,
+  channel: string,
+  threadTs: string
+): Promise<string> {
   const reader = response.body?.getReader()
   if (!reader) return ''
 
   const decoder = new TextDecoder()
   let result = ''
+  let lastUpdateMs = -SLACK_UPDATE_INTERVAL_MS // Allow first update immediately
+  const messageTs: string[] = []
 
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
+  const maybeUpdate = async (text: string, force = false) => {
+    const now = Date.now()
+    if (!force && now - lastUpdateMs < SLACK_UPDATE_INTERVAL_MS) return
+    lastUpdateMs = now
+    if (!text.trim()) return
 
-    const chunk = decoder.decode(value, { stream: true })
-    const lines = chunk.split('\n')
+    const chunks = splitForSlack(text)
+    for (let i = 0; i < chunks.length; i++) {
+      try {
+        if (i >= messageTs.length) {
+          const msg = await client.postMessage(channel, chunks[i], threadTs)
+          if (msg.ok && msg.ts) {
+            messageTs.push(msg.ts)
+          } else {
+            console.error(`[Slack Stream] Failed to post message ${i}:`, JSON.stringify(msg))
+            throw new Error(`Failed to post message: ${(msg as any).error || 'unknown error'}`)
+          }
+        } else {
+          const updateResult = await client.updateMessage(channel, messageTs[i], chunks[i])
+          if (!updateResult.ok) {
+            console.error(`[Slack Stream] Failed to update message ${i} (${messageTs[i]}):`, JSON.stringify(updateResult))
+            throw new Error(`Failed to update message: ${(updateResult as any).error || 'unknown error'}`)
+          }
+        }
+      } catch (err) {
+        console.error(`[Slack Stream] Error with message ${i}:`, err)
+        throw err
+      }
+    }
+  }
 
-    for (const line of lines) {
-      if (line.startsWith('data: ')) {
+  try {
+    let buffer = ''
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue
         const data = line.slice(6)
         if (data === '[DONE]') continue
         try {
           const parsed = JSON.parse(data)
           if (parsed.type === 'text') {
             result += parsed.text
+            await maybeUpdate(result)
           }
-        } catch {
-          // Ignore parse errors
+          if (parsed.type === 'error') {
+            console.error('[Slack Stream] Received error event:', parsed.error)
+            throw new Error(parsed.error ?? 'Unknown error')
+          }
+        } catch (e) {
+          if (e instanceof Error && e.message !== 'Unknown error') throw e
+          // Ignore parse errors for non-JSON lines
         }
       }
     }
-  }
 
-  return result
+    // Process any remaining buffer
+    if (buffer.trim()) {
+      const line = buffer.trim()
+      if (line.startsWith('data: ')) {
+        const data = line.slice(6)
+        if (data !== '[DONE]') {
+          try {
+            const parsed = JSON.parse(data)
+            if (parsed.type === 'text') result += parsed.text
+            if (parsed.type === 'error') throw new Error(parsed.error ?? 'Unknown error')
+          } catch (e) {
+            if (e instanceof Error && e.message !== 'Unknown error') throw e
+          }
+        }
+      }
+    }
+
+    // Final update (catches throttled last chunk + remaining buffer)
+    // Force update to ensure complete content is sent
+    if (result) await maybeUpdate(result, true)
+
+    return result
+  } finally {
+    reader.releaseLock()
+  }
 }
 
 /**
@@ -341,14 +414,15 @@ async function getThreadContext(
 }
 
 /**
- * Call ChatSession DO and collect response
+ * Call ChatSession DO and stream response to Slack
  */
 async function callChatSession(
   env: Env['Bindings'],
   sessionId: string,
   currentUserMessage: any,
   appConfig: SlackAppConfig,
-  contextMessages: any[]
+  contextMessages: any[],
+  streamParams: { client: SlackClient; channel: string; threadTs: string }
 ): Promise<string> {
   const doId = env.CHAT_SESSION.idFromName(sessionId)
 
@@ -378,24 +452,29 @@ async function callChatSession(
     body: JSON.stringify(chatRequest),
   })
 
-  // Collect response
-  return await collectSSEResponse(response as unknown as globalThis.Response)
+  // Stream response to Slack with incremental updates
+  return await streamSSEResponseToSlack(
+    response as unknown as globalThis.Response,
+    streamParams.client,
+    streamParams.channel,
+    streamParams.threadTs
+  )
 }
 
 /**
- * Handle Slack message asynchronously
+ * Handle Slack message from Queue
  */
-async function handleSlackMessage(
+export async function handleSlackQueueMessage(
   env: Env['Bindings'],
-  appConfig: SlackAppConfig,
-  event: SlackEvent
+  message: { appConfig: SlackAppConfig; event: SlackEvent }
 ): Promise<void> {
+  const { appConfig, event } = message
   const client = new SlackClient(appConfig.bot_token)
   const channel = event.channel!
   const threadTs = event.thread_ts || event.ts!
   const threadKey = getThreadKey(appConfig.app_id, event)
 
-  console.log('handleSlackMessage', event)
+  console.log('handleSlackQueueMessage', event)
 
   try {
     // Get or fetch bot user ID
@@ -413,6 +492,7 @@ async function handleSlackMessage(
     }
 
     // Extract and validate user message
+    const { extractUserMessage } = await import('../lib/slack')
     const userMessage = await extractUserMessage(
       event.text || '',
       botUserId || undefined,
@@ -465,66 +545,47 @@ async function handleSlackMessage(
 
     // Create new session if needed
     if (!sessionId) {
+      const { generateSessionId } = await import('../lib/utils')
       sessionId = generateSessionId(`${appConfig.llm_config_name}-slack`)
     }
-
-    // Send "processing" message first
-    const processingMsg = await client.postMessage(channel, 'Processing...', threadTs)
+    const processingMsg = await client.postMessage(channel, '---', threadTs)
     if (!processingMsg.ok || !processingMsg.ts) {
       const errorMsg = `Failed to send message: ${(processingMsg as any).error || 'unknown error'}`
       console.error('Slack postMessage failed:', JSON.stringify(processingMsg))
       await client.postMessage(channel, `Error: ${errorMsg}`, threadTs)
       return
     }
-    const processingTs = processingMsg.ts
 
-    try {
-      // Call ChatSession DO
-      const fullResponse = await callChatSession(
-        env,
-        sessionId,
-        currentUserMessage,
-        appConfig,
-        contextMessages
-      )
+    // Call ChatSession DO (streams response to Slack with incremental updates)
+    const fullResponse = await callChatSession(
+      env,
+      sessionId,
+      currentUserMessage,
+      appConfig,
+      contextMessages,
+      { client, channel, threadTs }
+    )
 
-      // Save thread mapping with current message timestamp
-      await saveThreadMapping(
-        env.DB,
-        threadKey,
-        sessionId,
-        appConfig.app_id,
-        channel,
-        event.thread_ts || null,
-        event.ts!  // Current message timestamp
-      )
+    // Save thread mapping with current message timestamp
+    await saveThreadMapping(
+      env.DB,
+      threadKey,
+      sessionId,
+      appConfig.app_id,
+      channel,
+      event.thread_ts || null,
+      event.ts!  // Current message timestamp
+    )
 
-      // Update the processing message with actual response
-      if (fullResponse) {
-        const chunks = splitForSlack(fullResponse)
-
-        // Update the processing message with the first chunk
-        await client.updateMessage(channel, processingTs, chunks[0])
-
-        // Send remaining chunks as additional messages in the thread
-        for (let i = 1; i < chunks.length; i++) {
-          await client.postMessage(channel, chunks[i], threadTs)
-        }
-      } else {
-        await client.updateMessage(channel, processingTs, 'No response generated.')
-      }
-    } catch (error) {
-      // If processing fails, update the processing message with error
-      console.error('Error in ChatSession call:', error)
-      await client.updateMessage(channel, processingTs, `Error: ${error instanceof Error ? error.message : String(error)}`)
-      throw error
+    if (!fullResponse?.trim()) {
+      await client.postMessage(channel, 'No response generated.', threadTs)
     }
   } catch (error) {
     console.error('Slack message handling error:', error)
     const errorMessage = error instanceof Error ? error.message : String(error)
     const chunks = splitForSlack(`Error: ${errorMessage}`)
 
-    // Send error message(s)
+    // Send error message in chunks if needed
     for (const chunk of chunks) {
       await client.postMessage(channel, chunk, threadTs)
     }
@@ -598,8 +659,11 @@ slack.post('/events', async (c) => {
 
   // Handle app_mention event
   if (event.type === 'app_mention') {
-    // Process asynchronously - return immediately to avoid Slack timeout
-    c.executionCtx.waitUntil(handleSlackMessage(c.env, appConfig, event))
+    // Send to Queue for async processing (no time limit)
+    await c.env.SLACK_QUEUE.send({
+      appConfig,
+      event,
+    })
     return c.json({ ok: true })
   }
 
