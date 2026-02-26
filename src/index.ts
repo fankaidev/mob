@@ -3,7 +3,7 @@ import { cors } from 'hono/cors'
 import type { Env } from './types'
 import api from './routes/api'
 import admin from './routes/admin'
-import slack from './routes/slack'
+import slack, { handleSlackQueueMessage } from './routes/slack'
 import web from './routes/web'
 import { handleScheduledTrigger } from './scheduled/cron-handler'
 
@@ -57,6 +57,22 @@ export default {
     ctx: ExecutionContext
   ) => {
     ctx.waitUntil(handleScheduledTrigger(env, ctx))
+  },
+
+  // Queue consumer for Slack messages
+  async queue(
+    batch: MessageBatch,
+    env: Env['Bindings'],
+  ): Promise<void> {
+    for (const message of batch.messages) {
+      try {
+        await handleSlackQueueMessage(env, message.body as any)
+        message.ack()
+      } catch (error) {
+        console.error('Queue message processing error:', error)
+        message.retry()
+      }
+    }
   }
 }
 

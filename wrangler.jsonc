@@ -52,6 +52,23 @@
   // Cron triggers for scheduled tasks
   "triggers": {
     "crons": ["*/5 * * * *"]  // Run every 5 minutes
+  },
+
+  // Queue configuration for Slack message processing
+  "queues": {
+    "producers": [
+      {
+        "binding": "SLACK_QUEUE",
+        "queue": "slack-message-queue"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "slack-message-queue",
+        "max_batch_size": 1,
+        "max_batch_timeout": 1
+      }
+    ]
   }
 
   // Note: Run `npm run setup:d1` to create the database
